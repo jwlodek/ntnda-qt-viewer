@@ -6,3 +6,4 @@ _version.py
 .pixi/*
 !.pixi/config.toml
 .htmlcov/
+.venv/
