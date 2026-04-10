@@ -1,0 +1,129 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm[toml]>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "napari-ntnd"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+description = "napari-ntnd"
+dependencies = []
+dynamic = ["version"]
+license.file = "LICENSE"
+readme = "README.md"
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+dev = [
+    "copier",
+    "pipdeptree",
+    "pre-commit",
+    "pyright",
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "tox-direct",
+    "types-mock",
+    "import-linter",
+]
+
+[project.urls]
+GitHub = "https://github.com/NSLS2/napari-ntnd"
+
+[[project.authors]]
+email = "jwlodek@bnl.gov"
+name = "Jakub Wlodek"
+
+
+[tool.setuptools_scm]
+version_file = "src/napari_ntnd/_version.py"
+
+[tool.pyright]
+typeCheckingMode = "standard"
+reportMissingImports = false
+reportMissingTypeStubs = false
+
+[tool.pytest.ini_options]
+addopts = """
+    --tb=native -vv
+    """
+filterwarnings = "error"
+testpaths = "docs src tests"
+
+[tool.coverage.run]
+data_file = "/tmp/napari_ntnd.coverage"
+
+[tool.coverage.paths]
+source = ["src", "**/site-packages/"]
+
+[tool.tox]
+legacy_tox_ini = """
+[tox]
+skipsdist=True
+
+[testenv:{pre-commit,type-checking,tests}]
+direct = True
+passenv = *
+allowlist_externals =
+    pytest
+    pre-commit
+    pyright
+commands =
+    pre-commit: pre-commit run --all-files --show-diff-on-failure {posargs}
+    type-checking: pyright src tests {posargs}
+    tests: pytest --cov=napari_ntnd --cov-report term --cov-report xml:cov.xml {posargs}
+"""
+
+[tool.ruff]
+src = ["src", "tests"]
+line-length = 88
+lint.select = [
+    "B",
+    "C4",
+    "E",
+    "F",
+    "W",
+    "I",
+    "UP",
+    "SLF",
+]
+exclude = [
+    "src/napari_ntnd/_version.py",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*" = ["SLF001"]
+
+[tool.importlinter]
+root_package = "napari_ntnd"
+
+# Switch to pixi when installing pypi and conda packages in the same env works again
+# [tool.pixi.workspace]
+# channels = ["conda-forge"]
+# platforms = ["linux-64"]
+
+# [tool.pixi.pypi-dependencies]
+# napari-ntnd = { path = ".", editable = true }
+
+# [tool.pixi.environments]
+# default = { solve-group = "default" }
+# dev = { features = ["dev"], solve-group = "default" }
+
+# [tool.pixi.tasks]
+# test = "pytest"
+# test-w-cov = "pytest --cov --cov-report=html"
+# lint = "pre-commit run --all-files"
+
+# [tool.pixi.dependencies]
+# pytest = ">=9.0.1,<10"
+# pre-commit = ">=4.4.0,<5"
+# ruff = ">=0.14.6,<0.15"
+# tox = ">=4.32.0,<5"
+# pytest-cov = ">=7.0.0,<8"
+# python = ">=3.12.12,<3.13"
+# import-linter = ">=2.7,<3"
