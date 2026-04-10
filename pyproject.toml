@@ -3,7 +3,7 @@ requires = ["setuptools>=64", "setuptools_scm[toml]>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "napari-ntnd"
+name = "ntnda-qt-viewer"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: BSD License",
@@ -11,7 +11,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
-description = "napari-ntnd"
+description = "ntnda-qt-viewer"
 dependencies = [
     "p4p>=4.2.2",
     "pyqtgraph>=0.14.0",
@@ -23,10 +23,10 @@ readme = "README.md"
 requires-python = ">=3.11"
 
 [project.scripts]
-napari-ntnd = "napari_ntnd.__main__:main"
+ntnda-qt-viewer = "ntnda_qt_viewer.__main__:main"
 
 [project.urls]
-GitHub = "https://github.com/NSLS2/napari-ntnd"
+GitHub = "https://github.com/NSLS2/ntnda-qt-viewer"
 
 [[project.authors]]
 email = "jwlodek@bnl.gov"
@@ -51,7 +51,7 @@ dev = [
 
 
 [tool.setuptools_scm]
-version_file = "src/napari_ntnd/_version.py"
+version_file = "src/ntnda_qt_viewer/_version.py"
 
 [tool.pyright]
 typeCheckingMode = "standard"
@@ -66,7 +66,7 @@ filterwarnings = "error"
 testpaths = "docs src tests"
 
 [tool.coverage.run]
-data_file = "/tmp/napari_ntnd.coverage"
+data_file = "/tmp/ntnda_qt_viewer.coverage"
 
 [tool.coverage.paths]
 source = ["src", "**/site-packages/"]
@@ -86,7 +86,7 @@ allowlist_externals =
 commands =
     pre-commit: pre-commit run --all-files --show-diff-on-failure {posargs}
     type-checking: pyright src tests {posargs}
-    tests: pytest --cov=napari_ntnd --cov-report term --cov-report xml:cov.xml {posargs}
+    tests: pytest --cov=ntnda_qt_viewer --cov-report term --cov-report xml:cov.xml {posargs}
 """
 
 [tool.ruff]
@@ -103,14 +103,14 @@ lint.select = [
     "SLF",
 ]
 exclude = [
-    "src/napari_ntnd/_version.py",
+    "src/ntnda_qt_viewer/_version.py",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*" = ["SLF001"]
 
 [tool.importlinter]
-root_package = "napari_ntnd"
+root_package = "ntnda_qt_viewer"
 
 # Switch to pixi when installing pypi and conda packages in the same env works again
 # [tool.pixi.workspace]
@@ -118,7 +118,7 @@ root_package = "napari_ntnd"
 # platforms = ["linux-64"]
 
 # [tool.pixi.pypi-dependencies]
-# napari-ntnd = { path = ".", editable = true }
+# ntnda-qt-viewer = { path = ".", editable = true }
 
 # [tool.pixi.environments]
 # default = { solve-group = "default" }

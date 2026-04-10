@@ -26,6 +26,41 @@ logger = logging.getLogger(__name__)
 
 _DISPLAY_INTERVAL_MS = 33  # ~30 FPS
 
+# Use OpenGL for smooth bilinear texture filtering (reduces aliasing)
+pg.setConfigOptions(useOpenGL=True)
+
+
+class _ImageViewBox(pg.ViewBox):
+    """ViewBox with right-drag zoom-to-rect and double-click reset."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._full_range: tuple[int, int] | None = None  # (cols, rows)
+
+    def set_full_range(self, cols: int, rows: int) -> None:
+        self._full_range = (cols, rows)
+
+    def mouseDoubleClickEvent(self, ev):
+        if self._full_range is not None:
+            cols, rows = self._full_range
+            self.setRange(xRange=(0, cols), yRange=(0, rows), padding=0)
+        ev.accept()
+
+    def mouseDragEvent(self, ev, axis=None):
+        if ev.button() == Qt.MouseButton.RightButton:
+            ev.accept()
+            if ev.isFinish():
+                p1 = self.mapToView(ev.buttonDownPos())
+                p2 = self.mapToView(ev.pos())
+                x0, x1 = sorted([p1.x(), p2.x()])
+                y0, y1 = sorted([p1.y(), p2.y()])
+                self.setRange(xRange=(x0, x1), yRange=(y0, y1), padding=0)
+                self.rbScaleBox.hide()
+            else:
+                self.updateScaleBox(ev.buttonDownPos(), ev.pos())
+        else:
+            super().mouseDragEvent(ev, axis)
+
 
 class _StatusIndicator(QLabel):
     """A small coloured circle that indicates connection status."""
@@ -71,6 +106,9 @@ class NTNDViewerWidget(QWidget):
 
         self._cross_row = 0
         self._cross_col = 0
+        self._hover_pos: str = ""
+        self._hover_x: int = -1
+        self._hover_y: int = -1
 
         self._init_ui()
         self._connect_signals()
@@ -117,13 +155,21 @@ class NTNDViewerWidget(QWidget):
         self._v_profile_curve = self._v_profile_plot.plot(pen="c")
 
         # Row 0, Col 1: image view
-        self._image_plot = self._glw.addPlot(row=0, col=1)
-        self._image_plot.setMouseEnabled(x=False, y=False)
+        vb = _ImageViewBox()
+        self._image_plot = self._glw.addPlot(row=0, col=1, viewBox=vb)
+        self._image_plot.setMouseEnabled(x=True, y=True)
         self._image_plot.setMenuEnabled(False)
         self._image_plot.hideAxis("left")
         self._image_plot.hideAxis("bottom")
-        self._image_item = pg.ImageItem()
+        self._image_item = pg.ImageItem(autoDownsample=True)
         self._image_plot.addItem(self._image_item)
+
+        # Mouse hover tracking
+        self._proxy = pg.SignalProxy(
+            self._image_plot.scene().sigMouseMoved,
+            rateLimit=30,
+            slot=self._on_mouse_moved,
+        )
 
         # Link vertical profile Y axis to image Y axis
         self._v_profile_plot.setYLink(self._image_plot)
@@ -190,6 +236,9 @@ class NTNDViewerWidget(QWidget):
         self._cross_row = int(
             np.clip(round(self._h_image_line.value()), 0, rows - 1)
         )
+        self._updating_crosshair = True
+        self._h_image_line.setValue(self._cross_row)
+        self._updating_crosshair = False
         self._sync_crosshairs_from_image()
 
     def _on_image_v_line_moved(self) -> None:
@@ -199,6 +248,9 @@ class NTNDViewerWidget(QWidget):
         self._cross_col = int(
             np.clip(round(self._v_image_line.value()), 0, cols - 1)
         )
+        self._updating_crosshair = True
+        self._v_image_line.setValue(self._cross_col)
+        self._updating_crosshair = False
         self._sync_crosshairs_from_image()
 
     def _sync_crosshairs_from_image(self) -> None:
@@ -250,7 +302,10 @@ class NTNDViewerWidget(QWidget):
         self._channel_edit.setEnabled(True)
         self._connected = False
         self._indicator.set_connected(False)
-        self._status_label.setText("Stopped")
+        self._fps = 0.0
+        self._fps_frame_count = 0
+        self._update_hover_value()
+        self._refresh_status_bar()
 
     # ------------------------------------------------------------------
     # Frame / disconnect handling
@@ -271,47 +326,65 @@ class NTNDViewerWidget(QWidget):
         first_image = self._current_image is None
         self._current_image = image
 
-        # Set image data on the ImageItem
-        self._image_item.setImage(image)
+        # Set image data on the ImageItem.
+        # pyqtgraph doesn't natively handle all dtypes (e.g. int64, uint64),
+        # so convert to float32 and provide explicit levels.
+        # Mirror horizontally: pyqtgraph transposes the image internally.
+        if image.dtype != np.float32:
+            display = image[:, ::-1].astype(np.float32)
+        else:
+            display = image[:, ::-1].copy()
+        levels = (float(np.min(display)), float(np.max(display)))
+        if levels[0] == levels[1]:
+            levels = (levels[0], levels[0] + 1.0)
+        self._image_item.setImage(display, levels=levels)
 
         rows, cols = image.shape[:2]
 
-        # Lock all views to [0, dim] with no padding
-        self._image_plot.setXRange(0, cols, padding=0)
-        self._image_plot.setYRange(0, rows, padding=0)
-        self._h_profile_plot.setXRange(0, cols, padding=0)
-        self._v_profile_plot.setYRange(0, rows, padding=0)
-
         if first_image:
+            # Lock all views to [0, dim] with no padding
+            self._image_plot.setXRange(0, cols, padding=0)
+            self._image_plot.setYRange(0, rows, padding=0)
+            self._h_profile_plot.setXRange(0, cols, padding=0)
+            self._v_profile_plot.setYRange(0, rows, padding=0)
+
             # Resize window to match image aspect ratio (no black borders)
             self._image_plot.setLimits(
                 xMin=0, xMax=cols, yMin=0, yMax=rows,
             )
+            self._image_plot.getViewBox().set_full_range(cols, rows)
             self._h_profile_plot.setLimits(xMin=0, xMax=cols)
             self._v_profile_plot.setLimits(yMin=0, yMax=rows)
             self._v_profile_plot.invertY(True)
 
-            # Compute window size preserving image aspect ratio
+            # Compute window size: try 1:1 pixels, then 75%, 50%, 25%
+            # Profile plots use 1/6 of each axis (stretch 5:1), so scale up
+            # to ensure the image area itself is the target pixel size.
             screen = self.screen().availableGeometry()
-            max_w = int(screen.width() * 0.8)
-            max_h = int(screen.height() * 0.8)
-            aspect = cols / rows
-            if max_w / max_h > aspect:
-                win_h = max_h
-                win_w = int(win_h * aspect)
-            else:
-                win_w = max_w
-                win_h = int(win_w / aspect)
+            max_w = screen.width()
+            max_h = screen.height()
+            overhead_h = 80  # controls bar + status bar
+            for scale in (1.0, 0.75, 0.5, 0.25):
+                img_w = int(cols * scale)
+                img_h = int(rows * scale)
+                # image gets 5/6 of total due to stretch factors
+                win_w = int(img_w * 6 / 5)
+                win_h = int(img_h * 6 / 5) + overhead_h
+                if win_w <= max_w and win_h <= max_h:
+                    break
             self.resize(win_w, win_h)
 
-            self._cross_row = image.shape[0] // 2
-            self._cross_col = image.shape[1] // 2
+            self._cross_row = 0
+            self._cross_col = 0
             self._updating_crosshair = True
-            self._h_image_line.setValue(self._cross_row)
-            self._v_image_line.setValue(self._cross_col)
+            self._h_image_line.setBounds((0, rows - 1))
+            self._v_image_line.setBounds((0, cols - 1))
+            self._h_image_line.setValue(0)
+            self._v_image_line.setValue(0)
             self._updating_crosshair = False
 
         self._update_profiles()
+        self._update_hover_value()
 
         now = time.monotonic()
         elapsed = now - self._fps_last_time
@@ -319,14 +392,47 @@ class NTNDViewerWidget(QWidget):
             self._fps = self._fps_frame_count / elapsed
             self._fps_frame_count = 0
             self._fps_last_time = now
-        self._status_label.setText(
-            f"{self._fps:.1f} FPS | {image.shape} {image.dtype}"
-        )
+        self._refresh_status_bar()
 
     def _on_disconnected(self) -> None:
         self._connected = False
         self._indicator.set_connected(False)
         self._status_label.setText("Disconnected")
+
+    def _on_mouse_moved(self, args: tuple) -> None:
+        pos = args[0]
+        if not self._image_plot.sceneBoundingRect().contains(pos):
+            self._hover_x = -1
+            self._hover_y = -1
+            self._hover_pos = ""
+            self._refresh_status_bar()
+            return
+        vb = self._image_plot.getViewBox()
+        mouse_point = vb.mapSceneToView(pos)
+        self._hover_x = int(mouse_point.x())
+        self._hover_y = int(mouse_point.y())
+        self._update_hover_value()
+        self._refresh_status_bar()
+
+    def _update_hover_value(self) -> None:
+        if self._current_image is None or self._hover_x < 0:
+            self._hover_pos = ""
+            return
+        rows, cols = self._current_image.shape[:2]
+        x, y = self._hover_x, self._hover_y
+        if 0 <= x < cols and 0 <= y < rows:
+            val = self._current_image[y, x]
+            self._hover_pos = f" | x={x} y={y} val={val}"
+        else:
+            self._hover_pos = ""
+
+    def _refresh_status_bar(self) -> None:
+        if self._current_image is None:
+            return
+        img = self._current_image
+        self._status_label.setText(
+            f"{self._fps:.1f} FPS | {img.shape} {img.dtype}{self._hover_pos}"
+        )
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self._display_timer.stop()
