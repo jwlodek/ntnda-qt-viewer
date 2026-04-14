@@ -75,8 +75,7 @@ class _StatusIndicator(QLabel):
     def set_connected(self, connected: bool) -> None:
         colour = QColor("#22c55e") if connected else QColor("#ef4444")
         self.setStyleSheet(
-            f"background-color: {colour.name()};"
-            f"border-radius: {self._DIAMETER // 2}px;"
+            f"background-color: {colour.name()};border-radius: {self._DIAMETER // 2}px;"
         )
 
 
@@ -216,14 +215,8 @@ class NTNDViewerWidget(QWidget):
         self._provider.disconnected.connect(self._on_disconnected)
 
         # Draggable crosshair lines on the image
-        self._h_image_line.sigPositionChanged.connect(
-            self._on_image_h_line_moved
-        )
-        self._v_image_line.sigPositionChanged.connect(
-            self._on_image_v_line_moved
-        )
-
-
+        self._h_image_line.sigPositionChanged.connect(self._on_image_h_line_moved)
+        self._v_image_line.sigPositionChanged.connect(self._on_image_v_line_moved)
 
     # ------------------------------------------------------------------
     # Crosshair interaction — image lines
@@ -233,9 +226,7 @@ class NTNDViewerWidget(QWidget):
         if self._updating_crosshair or self._current_image is None:
             return
         rows = self._current_image.shape[0]
-        self._cross_row = int(
-            np.clip(round(self._h_image_line.value()), 0, rows - 1)
-        )
+        self._cross_row = int(np.clip(round(self._h_image_line.value()), 0, rows - 1))
         self._updating_crosshair = True
         self._h_image_line.setValue(self._cross_row)
         self._updating_crosshair = False
@@ -245,9 +236,7 @@ class NTNDViewerWidget(QWidget):
         if self._updating_crosshair or self._current_image is None:
             return
         cols = self._current_image.shape[1]
-        self._cross_col = int(
-            np.clip(round(self._v_image_line.value()), 0, cols - 1)
-        )
+        self._cross_col = int(np.clip(round(self._v_image_line.value()), 0, cols - 1))
         self._updating_crosshair = True
         self._v_image_line.setValue(self._cross_col)
         self._updating_crosshair = False
@@ -350,7 +339,10 @@ class NTNDViewerWidget(QWidget):
 
             # Resize window to match image aspect ratio (no black borders)
             self._image_plot.setLimits(
-                xMin=0, xMax=cols, yMin=0, yMax=rows,
+                xMin=0,
+                xMax=cols,
+                yMin=0,
+                yMax=rows,
             )
             self._image_plot.getViewBox().set_full_range(cols, rows)
             self._h_profile_plot.setLimits(xMin=0, xMax=cols)

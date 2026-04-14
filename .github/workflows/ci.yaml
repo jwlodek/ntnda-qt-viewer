@@ -1,33 +1,55 @@
+---
 name: CI
-permissions:
-  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
   lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v6
         with:
           persist-credentials: false
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@8ca4608ef7f4daeb54f5205b20d0b7cb42f11143  # v0.8.14
         with:
-          python-version: '3.12'
+          pixi-version: v0.56.0
+          cache: false
+          frozen: true
 
-      - name: Install Dependencies
-        run: pip install .[dev]
+      - name: Run linting checks
+        run: pixi run --frozen lint
 
-      - name: Lint
-        run: pre-commit run --all-files
+  type-check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@8ca4608ef7f4daeb54f5205b20d0b7cb42f11143  # v0.8.14
+        with:
+          pixi-version: v0.56.0
+          cache: false
+          frozen: true
+
+      - name: Run type checks
+        run: pixi run --frozen type-check
 
   test:
     name: Unit Tests
@@ -39,23 +61,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@8ca4608ef7f4daeb54f5205b20d0b7cb42f11143  # v0.8.14
         with:
-          python-version: '3.12'
+          pixi-version: v0.56.0
+          cache: true
+          frozen: true
 
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install .[dev]
+      - name: Run tests for given python version
+        run: pixi run --frozen -e py${PYTHON_VERSION//./} pytest --cov=npdoc2md --cov-report=xml --cov-report=term
+        env:
+          PYTHON_VERSION: ${{ matrix.python-version }}
 
-      - name: Run Unit Tests
-        run: |
-          pytest --cov=napari_ntnd --cov-report=xml:coverage.xml
-
-      - name: Upload Coverage To Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          name: Coverage
-          files: coverage.xml
-          token: ${{ secrets.CODECOV_TOKEN }}
+      # - name: Upload Coverage To Codecov
+      #   uses: codecov/codecov-action@v5
+      #   with:
+      #     name: Coverage
+      #     files: coverage.xml
+      #     token: ${{ secrets.CODECOV_TOKEN }}

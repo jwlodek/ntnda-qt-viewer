@@ -10,6 +10,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 description = "ntnda-qt-viewer"
 dependencies = [
@@ -137,3 +138,39 @@ root_package = "ntnda_qt_viewer"
 # pytest-cov = ">=7.0.0,<8"
 # python = ">=3.12.12,<3.13"
 # import-linter = ">=2.7,<3"
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.pypi-dependencies]
+ntnda-qt-viewer = { path = ".", editable = true }
+
+[tool.pixi.dependencies]
+python = "*"
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+dev = { features = ["dev"], solve-group = "default" }
+gui = { features = ["gui"], solve-group = "default" }
+py311 = { features = ["dev", "py311"], solve-group = "py311" }
+py312 = { features = ["dev", "py312"], solve-group = "py312" }
+py313 = { features = ["dev", "py313"], solve-group = "py313" }
+py314 = { features = ["dev", "py314"], solve-group = "py314" }
+
+[tool.pixi.feature.py311.dependencies]
+python = ">=3.11,<3.12"
+
+[tool.pixi.feature.py312.dependencies]
+python = ">=3.12,<3.13"
+
+[tool.pixi.feature.py313.dependencies]
+python = ">=3.13,<3.14"
+
+[tool.pixi.feature.py314.dependencies]
+python = ">=3.14,<3.15"
+
+[tool.pixi.feature.py313.tasks]
+lint = "pre-commit run --all-files"
+test = "pytest --cov=src/ntnda_qt_viewer --cov-report=xml:coverage.xml --cov-report=term"
+type-check = "pyright src/ntnda_qt_viewer tests"

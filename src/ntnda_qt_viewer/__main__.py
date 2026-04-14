@@ -13,9 +13,7 @@ __all__ = ["main"]
 
 def main() -> None:
     parser = ArgumentParser(description="napari NTNDArray viewer")
-    parser.add_argument(
-        "-v", "--version", action="version", version=__version__
-    )
+    parser.add_argument("-v", "--version", action="version", version=__version__)
     parser.add_argument(
         "channel",
         nargs="?",

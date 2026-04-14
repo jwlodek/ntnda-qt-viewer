@@ -7,3 +7,4 @@ _version.py
 !.pixi/config.toml
 .htmlcov/
 .venv/
+coverage.xml
