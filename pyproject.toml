@@ -44,11 +44,9 @@ dev = [
     "copier",
     "pipdeptree",
     "pre-commit",
-    "pyright",
     "pytest",
     "pytest-cov",
     "ruff",
-    "tox-direct",
     "types-mock",
     "import-linter",
 ]
@@ -57,10 +55,8 @@ dev = [
 [tool.setuptools_scm]
 version_file = "src/ntnda_qt_viewer/_version.py"
 
-[tool.pyright]
-typeCheckingMode = "standard"
-reportMissingImports = false
-reportMissingTypeStubs = false
+[tool.ty.analysis]
+ignoreMissingImports = true
 
 [tool.pytest.ini_options]
 addopts = """
@@ -74,24 +70,6 @@ data_file = "/tmp/ntnda_qt_viewer.coverage"
 
 [tool.coverage.paths]
 source = ["src", "**/site-packages/"]
-
-[tool.tox]
-legacy_tox_ini = """
-[tox]
-skipsdist=True
-
-[testenv:{pre-commit,type-checking,tests}]
-direct = True
-passenv = *
-allowlist_externals =
-    pytest
-    pre-commit
-    pyright
-commands =
-    pre-commit: pre-commit run --all-files --show-diff-on-failure {posargs}
-    type-checking: pyright src tests {posargs}
-    tests: pytest --cov=ntnda_qt_viewer --cov-report term --cov-report xml:cov.xml {posargs}
-"""
 
 [tool.ruff]
 src = ["src", "tests"]
