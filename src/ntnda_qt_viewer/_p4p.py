@@ -111,32 +111,33 @@ class NTNDProvider(QObject):
         """Extract uncompressed image data from an NTNDArray callback value."""
         raw = getattr(value, "raw", value)
 
-        # Non-NTNDArray fallback
-        if not hasattr(raw, "__getitem__"):
+        if not self._has_key(raw, "value"):
             return np.array(value, copy=True)
 
-        codec_name = str(raw["codec.name"] or "").strip().lower()
+        codec_name = str(self._raw_get(raw, "codec.name", "") or "").strip().lower()
         if not codec_name:
             return self._extract_uncompressed_ntndarray(raw)
 
         return self._decompress_ntndarray(raw, codec_name)
 
     def _extract_uncompressed_ntndarray(self, raw) -> np.ndarray:
-        data = np.asarray(raw["value"])
-        shape = self._shape_from_dimension(raw["dimension"])
+        data = np.asarray(self._raw_get(raw, "value", []))
+        shape = self._shape_from_dimension(self._raw_get(raw, "dimension", []))
         if shape:
             count = int(np.prod(shape))
             data = data[:count].reshape(shape)
         return np.array(data, copy=True)
 
     def _decompress_ntndarray(self, raw, codec_name: str) -> np.ndarray:
-        compressed = int(raw["compressedSize"])
-        uncompressed = int(raw["uncompressedSize"])
-        payload = np.asarray(raw["value"])
+        compressed = int(self._raw_get(raw, "compressedSize", 0))
+        uncompressed = int(self._raw_get(raw, "uncompressedSize", 0))
+        payload = np.asarray(self._raw_get(raw, "value", []))
         payload_bytes = payload.view(np.uint8).tobytes()[:compressed]
 
-        dtype = self._dtype_from_codec_parameters(raw["codec.parameters"])
-        shape = self._shape_from_dimension(raw["dimension"])
+        dtype = self._dtype_from_codec_parameters(
+            self._raw_get(raw, "codec.parameters", 0)
+        )
+        shape = self._shape_from_dimension(self._raw_get(raw, "dimension", []))
         n_elems = int(np.prod(shape)) if shape else 0
 
         # JPEG decode returns an image array directly in most libraries.
@@ -163,9 +164,36 @@ class NTNDProvider(QObject):
         return dtype
 
     def _shape_from_dimension(self, dimension: object) -> tuple[int, ...]:
-        sizes = [int(d["size"]) for d in dimension]
+        sizes: list[int] = []
+        for d in dimension:
+            if isinstance(d, dict):
+                size = d.get("size")
+            else:
+                size = getattr(d, "size", None)
+            if size is None:
+                continue
+            sizes.append(int(size))
         sizes.reverse()
         return tuple(sizes)
+
+    def _raw_get(self, raw: object, key: str, default: object = None) -> object:
+        try:
+            return raw[key]
+        except Exception:
+            getter = getattr(raw, "get", None)
+            if callable(getter):
+                try:
+                    return getter(key, default)
+                except Exception:
+                    pass
+        return default
+
+    def _has_key(self, raw: object, key: str) -> bool:
+        try:
+            value = raw[key]
+        except Exception:
+            return False
+        return value is not None
 
     def _decompress_bytes(
         self, codec_name: str, data: bytes, uncompressed: int

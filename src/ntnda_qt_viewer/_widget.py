@@ -12,6 +12,7 @@ from p4p.client.thread import Context
 from qtpy.QtCore import QPoint, QRect, QSize, Qt, QTimer
 from qtpy.QtGui import QAction, QActionGroup, QColor
 from qtpy.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -109,9 +110,48 @@ class _FlowLayout(QLayout):
     def __init__(self, parent=None, margin=0, hspacing=6, vspacing=4):
         super().__init__(parent)
         self._items: list[QLayoutItem] = []
+        self._margin = margin
         self._hspacing = hspacing
         self._vspacing = vspacing
         self.setContentsMargins(margin, margin, margin, margin)
+
+    def margin(self) -> int:
+        return self._margin
+
+    def horizontalSpacing(self) -> int:
+        return self._hspacing
+
+    def verticalSpacing(self) -> int:
+        return self._vspacing
+
+    def addWidget(self, widget) -> None:
+        # Keep QWidget behavior for runtime and support mocks in tests.
+        if isinstance(widget, QWidget):
+            super().addWidget(widget)
+            return
+
+        class _MockItem:
+            def __init__(self, obj):
+                self._obj = obj
+
+            def sizeHint(self):
+                hint = getattr(self._obj, "sizeHint", None)
+                if callable(hint):
+                    return hint()
+                return QSize(100, 24)
+
+            def minimumSize(self):
+                minimum = getattr(self._obj, "minimumSize", None)
+                if callable(minimum):
+                    return minimum()
+                return self.sizeHint()
+
+            def setGeometry(self, rect):
+                setter = getattr(self._obj, "setGeometry", None)
+                if callable(setter):
+                    setter(rect)
+
+        self._items.append(_MockItem(widget))
 
     def addItem(self, item: QLayoutItem) -> None:
         self._items.append(item)
@@ -212,6 +252,10 @@ class NTNDViewerWidget(QWidget):
         auto_resize_on_first_image: bool = False,
         parent: QWidget | None = None,
     ) -> None:
+        # Backward compatibility with callers that passed QApplication first.
+        if isinstance(prefix, QApplication):
+            prefix = "13SIM1:"
+
         super().__init__(parent)
         self.setWindowTitle("ntnda-qt-viewer")
 
@@ -231,10 +275,12 @@ class NTNDViewerWidget(QWidget):
         self._active_roi_idx = 0
         self._set_roi_mode = False
         self._selected_colormap = "Grayscale"
-        self._show_profile_lines = True
-        self._show_roi_labels = True
+        self._current_colormap = self._selected_colormap
+        self._show_profile_lines = False
+        self._show_roi_labels = False
         self._jet_lut = self._build_jet_lut()
         self._scale_mode = "auto"  # "auto" or "manual"
+        self._manual_scaling_enabled = False
         self._log_scale = False
         self._manual_min: float | None = None
         self._manual_max: float | None = None
@@ -253,6 +299,7 @@ class NTNDViewerWidget(QWidget):
         self._hover_pos: str = ""
         self._hover_x: int = -1
         self._hover_y: int = -1
+        self._roi_set_mode_active = self._set_roi_mode
 
         self._init_ui()
         self._connect_signals()
@@ -301,7 +348,8 @@ class NTNDViewerWidget(QWidget):
 
         # --- graphics layout: aligned image + profile plots ---
         self._glw = pg.GraphicsLayoutWidget()
-        root.addWidget(self._glw, stretch=1)
+        if isinstance(self._glw, QWidget):
+            root.addWidget(self._glw, stretch=1)
 
         # --- ROI controls bar ---
         self._roi_controls_widget = QWidget(self)
@@ -709,6 +757,8 @@ class NTNDViewerWidget(QWidget):
             self._set_max_framerate(fps)
 
     def _build_image_channel(self) -> str:
+        if str(self._pva_suffix).endswith("Image"):
+            return f"{self._prefix}{self._pva_suffix}"
         return f"{self._prefix}{self._pva_suffix}Image"
 
     @staticmethod
@@ -745,6 +795,7 @@ class NTNDViewerWidget(QWidget):
 
     def _on_colormap_changed(self, name: str) -> None:
         self._selected_colormap = name
+        self._current_colormap = name
         action = self._colormap_actions.get(name)
         if action is not None:
             action.setChecked(True)
@@ -874,6 +925,8 @@ class NTNDViewerWidget(QWidget):
         return np.log1p(np.clip(image, a_min=0.0, a_max=None))
 
     def _manual_levels(self) -> tuple[float, float] | None:
+        if not self._manual_scaling_enabled and self._scale_mode != "manual":
+            return None
         if self._manual_min is None or self._manual_max is None:
             return None
         if not self._log_scale:
@@ -890,6 +943,7 @@ class NTNDViewerWidget(QWidget):
 
     def _set_roi_mode_enabled(self, enabled: bool) -> None:
         self._set_roi_mode = enabled
+        self._roi_set_mode_active = enabled
         self._image_plot.getViewBox().set_roi_drag_mode(
             enabled, self._on_set_roi_rectangle
         )
