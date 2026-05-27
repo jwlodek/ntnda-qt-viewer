@@ -38,6 +38,7 @@ def main() -> None:
         prefix=args.prefix,
         pva_suffix=args.pva_suffix,
         roi_suffixes=args.roi_suffixes,
+        auto_resize_on_first_image=True,
     )
     widget.resize(1024, 768)
     widget.show()
