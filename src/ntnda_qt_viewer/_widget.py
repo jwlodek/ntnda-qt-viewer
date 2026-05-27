@@ -142,6 +142,7 @@ class NTNDViewerWidget(QWidget):
         self._roi_suffixes = roi_suffixes or _DEFAULT_ROI_SUFFIXES.copy()
         self._provider = NTNDProvider(self._build_image_channel())
         self._current_image: np.ndarray | None = None
+        self._last_source_image: np.ndarray | None = None
         self._pending_image: np.ndarray | None = None
         self._connected = False
         self._updating_crosshair = False
@@ -152,6 +153,8 @@ class NTNDViewerWidget(QWidget):
         self._active_roi_idx = 0
         self._set_roi_mode = False
         self._selected_colormap = "Grayscale"
+        self._show_profile_lines = True
+        self._max_fps = round(1000.0 / _DISPLAY_INTERVAL_MS, 1)
         self._jet_lut = self._build_jet_lut()
         self._scale_mode = "auto"  # "auto" or "manual"
         self._log_scale = False
@@ -176,7 +179,7 @@ class NTNDViewerWidget(QWidget):
         self._connect_signals()
 
         self._display_timer = QTimer(self)
-        self._display_timer.setInterval(_DISPLAY_INTERVAL_MS)
+        self._display_timer.setInterval(self._fps_to_interval_ms(self._max_fps))
         self._display_timer.timeout.connect(self._refresh_display)
 
     # ------------------------------------------------------------------
@@ -202,14 +205,8 @@ class NTNDViewerWidget(QWidget):
         self._pva_suffix_edit = QLineEdit(self._pva_suffix)
         controls.addWidget(self._pva_suffix_edit)
 
-        controls.addWidget(QLabel("Colormap:"))
-        self._colormap_combo = QComboBox()
-        self._colormap_combo.addItems(list(_COLORMAPS))
-        self._colormap_combo.setCurrentText(self._selected_colormap)
-        controls.addWidget(self._colormap_combo)
-
-        self._scaling_btn = QPushButton("Scaling...")
-        controls.addWidget(self._scaling_btn)
+        self._settings_btn = QPushButton("Settings...")
+        controls.addWidget(self._settings_btn)
 
         self._start_btn = QPushButton("Start")
         self._stop_btn = QPushButton("Stop")
@@ -225,9 +222,16 @@ class NTNDViewerWidget(QWidget):
         # --- ROI controls bar ---
         roi_controls = QHBoxLayout()
         roi_controls.setContentsMargins(4, 2, 4, 2)
-        roi_controls.addWidget(QLabel("ROIs:"))
         for idx, suffix in enumerate(self._roi_suffixes):
-            set_btn = QPushButton(f"Set {suffix}")
+            if idx > 0:
+                divider = QLabel("|")
+                divider.setStyleSheet("color: #9ca3af; font-weight: bold;")
+                roi_controls.addWidget(divider)
+
+            roi_controls.addWidget(QLabel(self._roi_label(idx)))
+
+            set_btn = QPushButton("Set")
+            set_btn.setFixedWidth(46)
             set_btn.setCheckable(True)
             set_btn.clicked.connect(
                 lambda checked, roi_idx=idx: self._on_set_roi_button_clicked(
@@ -237,7 +241,7 @@ class NTNDViewerWidget(QWidget):
             roi_controls.addWidget(set_btn)
             self._roi_set_buttons.append(set_btn)
 
-            enable_check = QCheckBox(f"Enable {suffix}")
+            enable_check = QCheckBox("Enable")
             enable_check.setChecked(False)
             enable_check.toggled.connect(
                 lambda visible, roi_idx=idx: self._toggle_roi_visibility(roi_idx, visible)
@@ -319,8 +323,7 @@ class NTNDViewerWidget(QWidget):
         self._stop_btn.clicked.connect(self._on_stop)
         self._provider.new_frame.connect(self._on_new_frame)
         self._provider.disconnected.connect(self._on_disconnected)
-        self._colormap_combo.currentTextChanged.connect(self._on_colormap_changed)
-        self._scaling_btn.clicked.connect(self._open_scaling_dialog)
+        self._settings_btn.clicked.connect(self._open_settings_dialog)
 
         # Draggable crosshair lines on the image
         self._h_image_line.sigPositionChanged.connect(self._on_image_h_line_moved)
@@ -328,6 +331,10 @@ class NTNDViewerWidget(QWidget):
 
     def _build_image_channel(self) -> str:
         return f"{self._prefix}{self._pva_suffix}Image"
+
+    @staticmethod
+    def _roi_label(idx: int) -> str:
+        return f"ROI{idx + 1}"
 
     @staticmethod
     def _dtype_min_max(dtype: np.dtype) -> tuple[float, float]:
@@ -344,6 +351,15 @@ class NTNDViewerWidget(QWidget):
             return
         self._data_dtype = dtype
         self._manual_min, self._manual_max = self._dtype_min_max(dtype)
+
+    @staticmethod
+    def _fps_to_interval_ms(fps: float) -> int:
+        safe_fps = max(float(fps), 0.1)
+        return max(1, int(round(1000.0 / safe_fps)))
+
+    def _set_max_fps(self, fps: float) -> None:
+        self._max_fps = max(float(fps), 0.1)
+        self._display_timer.setInterval(self._fps_to_interval_ms(self._max_fps))
 
     @staticmethod
     def _build_jet_lut(size: int = 256) -> np.ndarray:
@@ -365,10 +381,18 @@ class NTNDViewerWidget(QWidget):
         self._selected_colormap = name
         self._apply_colormap()
 
-    def _open_scaling_dialog(self) -> None:
-        dialog = QDialog(None)
-        dialog.setWindowTitle("Scaling Options")
+    def _on_profile_lines_toggled(self, visible: bool) -> None:
+        self._show_profile_lines = visible
+        self._h_image_line.setVisible(visible)
+        self._v_image_line.setVisible(visible)
 
+    def _open_settings_dialog(self) -> None:
+        dialog = QDialog(None)
+        dialog.setWindowTitle("Viewer Settings")
+
+        prev_colormap = self._selected_colormap
+        prev_show_profile_lines = self._show_profile_lines
+        prev_max_fps = self._max_fps
         prev_scale_mode = self._scale_mode
         prev_log_scale = self._log_scale
         prev_manual_min = self._manual_min
@@ -376,6 +400,15 @@ class NTNDViewerWidget(QWidget):
 
         layout = QVBoxLayout(dialog)
         form = QFormLayout()
+
+        colormap_combo = QComboBox()
+        colormap_combo.addItems(list(_COLORMAPS))
+        colormap_combo.setCurrentText(self._selected_colormap)
+
+        profile_lines_check = QCheckBox("Show profile lines")
+        profile_lines_check.setChecked(self._show_profile_lines)
+
+        max_fps_edit = QLineEdit(str(self._max_fps))
 
         auto_radio = QRadioButton("Auto scale (frame min/max)")
         manual_radio = QRadioButton("Manual scale")
@@ -403,11 +436,36 @@ class NTNDViewerWidget(QWidget):
         manual_radio.toggled.connect(_update_manual_enabled)
 
         def _refresh_preview() -> None:
-            if self._current_image is not None:
-                self._pending_image = self._current_image
+            if self._last_source_image is not None:
+                self._pending_image = self._last_source_image
                 self._refresh_display()
 
         def _apply_from_controls(show_error: bool) -> bool:
+            self._on_colormap_changed(colormap_combo.currentText())
+            self._on_profile_lines_toggled(profile_lines_check.isChecked())
+
+            try:
+                next_max_fps = float(max_fps_edit.text().strip())
+            except ValueError:
+                if show_error:
+                    QMessageBox.warning(
+                        self,
+                        "Viewer Settings",
+                        "Max FPS must be a numeric value.",
+                    )
+                _refresh_preview()
+                return not show_error
+            if next_max_fps <= 0:
+                if show_error:
+                    QMessageBox.warning(
+                        self,
+                        "Viewer Settings",
+                        "Max FPS must be greater than 0.",
+                    )
+                _refresh_preview()
+                return not show_error
+            self._set_max_fps(next_max_fps)
+
             next_log_scale = log_check.isChecked()
             next_scale_mode = "manual" if manual_radio.isChecked() else "auto"
 
@@ -421,18 +479,20 @@ class NTNDViewerWidget(QWidget):
                     if show_error:
                         QMessageBox.warning(
                             self,
-                            "Scaling Options",
+                            "Viewer Settings",
                             "Manual min/max must be numeric values.",
                         )
-                    return False
+                    _refresh_preview()
+                    return not show_error
                 if next_manual_min >= next_manual_max:
                     if show_error:
                         QMessageBox.warning(
                             self,
-                            "Scaling Options",
+                            "Viewer Settings",
                             "Manual min must be less than manual max.",
                         )
-                    return False
+                    _refresh_preview()
+                    return not show_error
 
             self._log_scale = next_log_scale
             self._scale_mode = next_scale_mode
@@ -454,7 +514,13 @@ class NTNDViewerWidget(QWidget):
         log_check.toggled.connect(_on_preview_change)
         min_edit.textChanged.connect(_on_preview_change)
         max_edit.textChanged.connect(_on_preview_change)
+        colormap_combo.currentTextChanged.connect(_on_preview_change)
+        profile_lines_check.toggled.connect(_on_preview_change)
+        max_fps_edit.textChanged.connect(_on_preview_change)
 
+        form.addRow("Colormap", colormap_combo)
+        form.addRow(profile_lines_check)
+        form.addRow("Max FPS", max_fps_edit)
         form.addRow(auto_radio)
         form.addRow(manual_radio)
         form.addRow(log_check)
@@ -470,10 +536,16 @@ class NTNDViewerWidget(QWidget):
         layout.addWidget(buttons)
 
         if dialog.exec() != QDialog.DialogCode.Accepted:
+            self._selected_colormap = prev_colormap
+            self._show_profile_lines = prev_show_profile_lines
+            self._set_max_fps(prev_max_fps)
             self._scale_mode = prev_scale_mode
             self._log_scale = prev_log_scale
             self._manual_min = prev_manual_min
             self._manual_max = prev_manual_max
+            self._apply_colormap()
+            self._h_image_line.setVisible(self._show_profile_lines)
+            self._v_image_line.setVisible(self._show_profile_lines)
             _refresh_preview()
             return
 
@@ -502,7 +574,7 @@ class NTNDViewerWidget(QWidget):
         self._image_plot.getViewBox().set_roi_drag_mode(enabled, self._on_set_roi_rectangle)
         if enabled:
             self._status_label.setText(
-                f"Set ROI mode: right-drag to define {self._roi_models[self._active_roi_idx].suffix}"
+                f"Set ROI mode: right-drag to define {self._roi_label(self._active_roi_idx)}"
             )
         else:
             self._refresh_status_bar()
@@ -569,9 +641,9 @@ class NTNDViewerWidget(QWidget):
         return min_x, min_y, size_x, size_y
 
     def _load_roi_from_ioc(self, idx: int) -> tuple[bool, str]:
+        label = self._roi_label(idx)
         if self._current_image is None:
-            suffix = self._roi_models[idx].suffix
-            return False, f"Cannot enable {suffix} before first image frame"
+            return False, f"Cannot enable {label} before first image frame"
 
         rows, cols = self._current_image.shape[:2]
         suffix = self._roi_models[idx].suffix
@@ -581,23 +653,23 @@ class NTNDViewerWidget(QWidget):
             values = [int(ctxt.get(self._roi_field_channel(suffix, field))) for field in fields]
         except Exception:
             logger.exception("Failed to read ROI settings for %s", suffix)
-            return False, f"Failed to read {suffix} settings from IOC"
+            return False, f"Failed to read {label} settings from IOC"
 
         src_min_x, src_min_y, size_x, size_y = values
         if size_x <= 0 or size_y <= 0:
             return (
                 False,
-                f"Cannot enable {suffix}: ROI size ({size_x}x{size_y}) is invalid. Use Set {suffix}.",
+                f"Cannot enable {label}: ROI size ({size_x}x{size_y}) is invalid. Use Set {label}.",
             )
         if size_x > cols or size_y > rows:
             return (
                 False,
-                f"Cannot enable {suffix}: ROI size ({size_x}x{size_y}) exceeds image ({cols}x{rows}). Use Set {suffix}.",
+                f"Cannot enable {label}: ROI size ({size_x}x{size_y}) exceeds image ({cols}x{rows}). Use Set {label}.",
             )
         if src_min_x < 0 or src_min_y < 0 or src_min_x + size_x > cols or src_min_y + size_y > rows:
             return (
                 False,
-                f"Cannot enable {suffix}: ROI bounds are outside image ({cols}x{rows}). Use Set {suffix}.",
+                f"Cannot enable {label}: ROI bounds are outside image ({cols}x{rows}). Use Set {label}.",
             )
 
         x0, y0, size_x, size_y = self._source_to_display_roi(
@@ -823,7 +895,6 @@ class NTNDViewerWidget(QWidget):
         return self._apply_transform(image, transform)
 
     def _on_new_frame(self, image: np.ndarray) -> None:
-        self._fps_frame_count += 1
         self._pending_image = image
         if not self._connected:
             self._connected = True
@@ -835,6 +906,7 @@ class NTNDViewerWidget(QWidget):
             return
         self._pending_image = None
         first_image = self._current_image is None
+        self._last_source_image = image
         self._update_dtype_defaults(image.dtype)
         self._current_image = self._orient_image(image)
         image = self._current_image
@@ -907,6 +979,9 @@ class NTNDViewerWidget(QWidget):
 
         self._update_profiles()
         self._update_hover_value()
+
+        # Count frames actually rendered, not frames received from the PV callback.
+        self._fps_frame_count += 1
 
         now = time.monotonic()
         elapsed = now - self._fps_last_time

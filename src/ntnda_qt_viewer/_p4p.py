@@ -185,7 +185,7 @@ class NTNDProvider(QObject):
                         "Codec 'blosc' requires Python package 'blosc2' or 'blosc'"
                     ) from exc
 
-        if codec_name in ("lz4", "lz4hdf5"):
+        if codec_name == "lz4":
             try:
                 lz4_block = importlib.import_module("lz4.block")
                 return lz4_block.decompress(data, uncompressed_size=uncompressed)
@@ -195,19 +195,25 @@ class NTNDProvider(QObject):
             try:
                 imagecodecs = importlib.import_module("imagecodecs")
 
-                if codec_name == "lz4hdf5":
-                    if hasattr(imagecodecs, "lz4h5_decode"):
-                        return bytes(imagecodecs.lz4h5_decode(data))
-                    if hasattr(imagecodecs, "lz4hdf5_decode"):
-                        return bytes(imagecodecs.lz4hdf5_decode(data))
                 if hasattr(imagecodecs, "lz4_decode"):
                     return bytes(imagecodecs.lz4_decode(data))
             except ImportError:
                 pass
 
-            raise RuntimeError(
-                f"Codec '{codec_name}' requires Python package 'lz4' or 'imagecodecs'"
-            )
+            raise RuntimeError("Codec 'lz4' requires Python package 'lz4' or 'imagecodecs'")
+
+        if codec_name == "lz4hdf5":
+            try:
+                imagecodecs = importlib.import_module("imagecodecs")
+
+                # Prefer the explicit lz4hdf5 API name when present.
+                if hasattr(imagecodecs, "lz4hdf5_decode"):
+                    return bytes(imagecodecs.lz4hdf5_decode(data))
+                if hasattr(imagecodecs, "lz4h5_decode"):
+                    return bytes(imagecodecs.lz4h5_decode(data))
+            except ImportError:
+                pass
+            raise RuntimeError("Codec 'lz4hdf5' requires Python package 'imagecodecs'")
 
         if codec_name == "bslz4":
             try:
