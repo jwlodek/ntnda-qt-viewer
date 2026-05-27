@@ -8,6 +8,7 @@ PVs, built on [pyqtgraph](https://pyqtgraph.readthedocs.io/) and
 ## Features
 
 - Live streaming from any NTNDArray PVAccess channel
+- Decoding of compressed NTNDArray payloads using Python codec libraries
 - Supports 8–64 bit signed/unsigned integers and 32/64-bit floats
 - Draggable crosshair lines with linked horizontal and vertical pixel profile plots
 - Scroll-wheel zoom, right-drag zoom-to-rectangle, double-click to reset
@@ -27,6 +28,13 @@ separately:
 
 ```bash
 pip install PySide6
+```
+
+To support compressed NTNDArray codecs (zlib, blosc, lz4/lz4hdf5, bslz4, jpeg)
+install optional codec dependencies:
+
+```bash
+pip install "ntnda-qt-viewer[codecs]"
 ```
 
 ## Usage
