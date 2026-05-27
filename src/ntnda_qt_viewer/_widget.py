@@ -12,22 +12,20 @@ from p4p.client.thread import Context
 from qtpy.QtCore import QPoint, QRect, QSize, Qt, QTimer
 from qtpy.QtGui import QAction, QActionGroup, QColor
 from qtpy.QtWidgets import (
-    QComboBox,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
-    QHBoxLayout,
     QFrame,
+    QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLayout,
     QLayoutItem,
     QLineEdit,
     QMenu,
     QMessageBox,
-    QInputDialog,
-    QListWidget,
-    QListWidgetItem,
     QPushButton,
     QRadioButton,
     QVBoxLayout,
@@ -152,7 +150,9 @@ class _FlowLayout(QLayout):
         for item in self._items:
             size = size.expandedTo(item.minimumSize())
         margins = self.contentsMargins()
-        size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+        size += QSize(
+            margins.left() + margins.right(), margins.top() + margins.bottom()
+        )
         return size
 
     def _do_layout(self, rect: QRect, test_only: bool) -> int:
@@ -566,8 +566,9 @@ class NTNDViewerWidget(QWidget):
                     ctxt.get(channel)
             except Exception:
                 QMessageBox.warning(
-                    dialog, "ROIs",
-                    f"Cannot connect to ROI suffix '{candidate}'. Verify the IOC is running and the suffix is correct."
+                    dialog,
+                    "ROIs",
+                    f"Cannot connect to ROI suffix '{candidate}'. Verify the IOC is running and the suffix is correct.",  # noqa: E501
                 )
                 return
             self._roi_suffixes.append(candidate)
@@ -645,7 +646,9 @@ class NTNDViewerWidget(QWidget):
             enable_check = QCheckBox("Enable")
             enable_check.setChecked(False)
             enable_check.toggled.connect(
-                lambda visible, roi_idx=idx: self._toggle_roi_visibility(roi_idx, visible)
+                lambda visible, roi_idx=idx: self._toggle_roi_visibility(
+                    roi_idx, visible
+                )
             )
             group_layout.addWidget(enable_check)
             self._roi_enable_checks.append(enable_check)
@@ -681,8 +684,6 @@ class NTNDViewerWidget(QWidget):
                 continue
             normalized.append(value if value.endswith(":") else f"{value}:")
         return normalized
-
-
 
     def _refresh_max_framerate_action_text(self) -> None:
         self._max_framerate_action.setText(f"Max Framerate... ({self._max_fps} FPS)")
@@ -889,10 +890,12 @@ class NTNDViewerWidget(QWidget):
 
     def _set_roi_mode_enabled(self, enabled: bool) -> None:
         self._set_roi_mode = enabled
-        self._image_plot.getViewBox().set_roi_drag_mode(enabled, self._on_set_roi_rectangle)
+        self._image_plot.getViewBox().set_roi_drag_mode(
+            enabled, self._on_set_roi_rectangle
+        )
         if enabled:
             self._status_label.setText(
-                f"Set ROI mode: right-drag to define {self._roi_models[self._active_roi_idx].suffix}"
+                f"Set ROI mode: right-drag to define ROI{self._active_roi_idx + 1}"
             )
         else:
             self._refresh_status_bar()
@@ -976,26 +979,34 @@ class NTNDViewerWidget(QWidget):
         ctxt = self._ensure_roi_context()
         fields = ("MinX", "MinY", "SizeX", "SizeY")
         try:
-            values = [int(ctxt.get(self._roi_field_channel(suffix, field))) for field in fields]
+            values = [
+                int(ctxt.get(self._roi_field_channel(suffix, field)))
+                for field in fields
+            ]
         except Exception:
             logger.exception("Failed to read ROI settings for %s", suffix)
-            return False, f"Failed to read {suffix} settings from IOC"
+            return False, f"Failed to read ROI{idx + 1} settings from IOC"
 
         src_min_x, src_min_y, size_x, size_y = values
         if size_x <= 0 or size_y <= 0:
             return (
                 False,
-                f"Cannot enable {suffix}: ROI size ({size_x}x{size_y}) is invalid. Use Set {suffix}.",
+                f"Cannot enable ROI{idx + 1}: ROI size ({size_x}x{size_y}) is invalid. Set ROI first.",  # noqa: E501
             )
         if size_x > cols or size_y > rows:
             return (
                 False,
-                f"Cannot enable {suffix}: ROI size ({size_x}x{size_y}) exceeds image ({cols}x{rows}). Use Set {suffix}.",
+                f"Cannot enable ROI{idx + 1}: ROI size ({size_x}x{size_y}) exceeds image ({cols}x{rows}). Set ROI first.",  # noqa: E501
             )
-        if src_min_x < 0 or src_min_y < 0 or src_min_x + size_x > cols or src_min_y + size_y > rows:
+        if (
+            src_min_x < 0
+            or src_min_y < 0
+            or src_min_x + size_x > cols
+            or src_min_y + size_y > rows
+        ):
             return (
                 False,
-                f"Cannot enable {suffix}: ROI bounds are outside image ({cols}x{rows}). Use Set {suffix}.",
+                f"Cannot enable ROI{idx + 1}: ROI bounds are outside image ({cols}x{rows}). Set ROI first.",  # noqa: E501
             )
 
         x0, y0, size_x, size_y = self._source_to_display_roi(
@@ -1069,7 +1080,9 @@ class NTNDViewerWidget(QWidget):
             )
         return min_x, min_y, size_x, size_y
 
-    def _write_roi(self, idx: int, min_x: int, min_y: int, size_x: int, size_y: int) -> None:
+    def _write_roi(
+        self, idx: int, min_x: int, min_y: int, size_x: int, size_y: int
+    ) -> None:
         if not (0 <= idx < len(self._roi_models)):
             return
         if self._current_image is None:

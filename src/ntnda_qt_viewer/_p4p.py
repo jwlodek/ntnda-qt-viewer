@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
 import zlib
-
-import importlib
 from io import BytesIO
 
 import numpy as np
@@ -168,7 +167,9 @@ class NTNDProvider(QObject):
         sizes.reverse()
         return tuple(sizes)
 
-    def _decompress_bytes(self, codec_name: str, data: bytes, uncompressed: int) -> bytes:
+    def _decompress_bytes(
+        self, codec_name: str, data: bytes, uncompressed: int
+    ) -> bytes:
         if codec_name == "zlib":
             return zlib.decompress(data)
 
@@ -200,7 +201,9 @@ class NTNDProvider(QObject):
             except ImportError:
                 pass
 
-            raise RuntimeError("Codec 'lz4' requires Python package 'lz4' or 'imagecodecs'")
+            raise RuntimeError(
+                "Codec 'lz4' requires Python package 'lz4' or 'imagecodecs'"
+            )
 
         if codec_name == "lz4hdf5":
             try:
