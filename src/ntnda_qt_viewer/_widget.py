@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from typing import Any, Callable, cast
 
 import numpy as np
 import pyqtgraph as pg
@@ -151,7 +152,7 @@ class _FlowLayout(QLayout):
                 if callable(setter):
                     setter(rect)
 
-        self._items.append(_MockItem(widget))
+        self._items.append(cast(QLayoutItem, _MockItem(widget)))
 
     def addItem(self, item: QLayoutItem) -> None:
         self._items.append(item)
@@ -169,7 +170,7 @@ class _FlowLayout(QLayout):
             return self._items.pop(index)
         return None
 
-    def expandingDirections(self) -> Qt.Orientations:
+    def expandingDirections(self) -> Qt.Orientation:
         return Qt.Orientation(0)
 
     def hasHeightForWidth(self) -> bool:
@@ -347,7 +348,7 @@ class NTNDViewerWidget(QWidget):
         root.addLayout(controls)
 
         # --- graphics layout: aligned image + profile plots ---
-        self._glw = pg.GraphicsLayoutWidget()
+        self._glw: Any = pg.GraphicsLayoutWidget()
         if isinstance(self._glw, QWidget):
             root.addWidget(self._glw, stretch=1)
 
@@ -535,7 +536,9 @@ class NTNDViewerWidget(QWidget):
             while scroll_layout.count() > 0:
                 item = scroll_layout.takeAt(0)
                 if item and item.widget():
-                    item.widget().deleteLater()
+                    widget = item.widget()
+                    if widget:
+                        widget.deleteLater()
             roi_widgets.clear()
 
             for idx, suffix in enumerate(self._roi_suffixes):
@@ -558,7 +561,7 @@ class NTNDViewerWidget(QWidget):
                 remove_btn = QPushButton("✕")
                 remove_btn.setMaximumWidth(40)
 
-                def make_remove_handler(roi_idx: int) -> None:
+                def make_remove_handler(roi_idx: int) -> Callable[[], None]:
                     def remove_roi() -> None:
                         if len(self._roi_suffixes) <= 1:
                             QMessageBox.warning(
@@ -791,7 +794,7 @@ class NTNDViewerWidget(QWidget):
         if self._selected_colormap == "JET":
             self._image_item.setLookupTable(self._jet_lut)
         else:
-            self._image_item.setLookupTable(None)
+            self._image_item.setLookupTable(None)  # type: ignore
 
     def _on_colormap_changed(self, name: str) -> None:
         self._selected_colormap = name

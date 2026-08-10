@@ -8,11 +8,12 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 from pytest_mock import MockerFixture
+from qtpy.QtCore import QCoreApplication
 from qtpy.QtWidgets import QApplication
 
 
 @pytest.fixture(scope="session")
-def qapp() -> Generator[QApplication, None, None]:
+def qapp() -> Generator[QCoreApplication, None, None]:
     """Create a QApplication for testing Qt widgets."""
     app = QApplication.instance()
     if app is None:

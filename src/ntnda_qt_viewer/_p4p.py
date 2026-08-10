@@ -6,6 +6,7 @@ import importlib
 import logging
 import zlib
 from io import BytesIO
+from typing import Any
 
 import numpy as np
 from p4p.client.thread import Context, Disconnected
@@ -153,7 +154,7 @@ class NTNDProvider(QObject):
             arr = arr.reshape(shape)
         return np.array(arr, copy=True)
 
-    def _dtype_from_codec_parameters(self, parameters: object) -> np.dtype:
+    def _dtype_from_codec_parameters(self, parameters: Any) -> np.dtype:
         try:
             code = int(parameters)
         except Exception:
@@ -163,7 +164,7 @@ class NTNDProvider(QObject):
             raise ValueError(f"Unsupported codec parameter type code: {code}")
         return dtype
 
-    def _shape_from_dimension(self, dimension: object) -> tuple[int, ...]:
+    def _shape_from_dimension(self, dimension: Any) -> tuple[int, ...]:
         sizes: list[int] = []
         for d in dimension:
             if isinstance(d, dict):
@@ -176,7 +177,7 @@ class NTNDProvider(QObject):
         sizes.reverse()
         return tuple(sizes)
 
-    def _raw_get(self, raw: object, key: str, default: object = None) -> object:
+    def _raw_get(self, raw: Any, key: str, default: object = None) -> Any:
         try:
             return raw[key]
         except Exception:
@@ -188,7 +189,7 @@ class NTNDProvider(QObject):
                     pass
         return default
 
-    def _has_key(self, raw: object, key: str) -> bool:
+    def _has_key(self, raw: Any, key: str) -> bool:
         try:
             value = raw[key]
         except Exception:

@@ -62,8 +62,6 @@ dev = [
 [tool.setuptools_scm]
 version_file = "src/ntnda_qt_viewer/_version.py"
 
-[tool.ty.analysis]
-ignoreMissingImports = true
 
 [tool.pytest.ini_options]
 addopts = """
