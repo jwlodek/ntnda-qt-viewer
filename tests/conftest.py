@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Generator, Any
-
-import pytest
+from collections.abc import Generator
 from unittest.mock import MagicMock
-from pytest_mock import MockerFixture
+
 import numpy as np
-from qtpy.QtCore import Qt, QRect, QSize
+import pytest
+from pytest_mock import MockerFixture
 from qtpy.QtWidgets import QApplication
 
 
@@ -56,8 +55,16 @@ def sample_image() -> np.ndarray:
 def mock_rect_roi(mocker: MockerFixture) -> MagicMock:
     """Create a mock RectROI."""
     rect = mocker.MagicMock()
-    rect.pos = mocker.MagicMock(return_value=mocker.MagicMock(x=mocker.MagicMock(return_value=10), y=mocker.MagicMock(return_value=20)))
-    rect.size = mocker.MagicMock(return_value=mocker.MagicMock(x=mocker.MagicMock(return_value=100), y=mocker.MagicMock(return_value=100)))
+    rect.pos = mocker.MagicMock(
+        return_value=mocker.MagicMock(
+            x=mocker.MagicMock(return_value=10), y=mocker.MagicMock(return_value=20)
+        )
+    )
+    rect.size = mocker.MagicMock(
+        return_value=mocker.MagicMock(
+            x=mocker.MagicMock(return_value=100), y=mocker.MagicMock(return_value=100)
+        )
+    )
     rect.setPos = mocker.MagicMock()
     rect.setSize = mocker.MagicMock()
     rect.setVisible = mocker.MagicMock()
@@ -93,15 +100,23 @@ def mock_image_plot(mocker: MockerFixture) -> MagicMock:
 def mock_pyqtgraph(mocker: MockerFixture) -> MagicMock:
     """Mock pyqtgraph module."""
     pg = mocker.MagicMock()
-    
+
     # Mock ViewBox
     pg.ViewBox = mocker.MagicMock()
-    
+
     # Mock RectROI
     def rect_roi_factory(*args, **kwargs):
         rect = mocker.MagicMock()
-        rect.pos = mocker.MagicMock(return_value=mocker.MagicMock(x=mocker.MagicMock(return_value=0), y=mocker.MagicMock(return_value=0)))
-        rect.size = mocker.MagicMock(return_value=mocker.MagicMock(x=mocker.MagicMock(return_value=20), y=mocker.MagicMock(return_value=20)))
+        rect.pos = mocker.MagicMock(
+            return_value=mocker.MagicMock(
+                x=mocker.MagicMock(return_value=0), y=mocker.MagicMock(return_value=0)
+            )
+        )
+        rect.size = mocker.MagicMock(
+            return_value=mocker.MagicMock(
+                x=mocker.MagicMock(return_value=20), y=mocker.MagicMock(return_value=20)
+            )
+        )
         rect.setPos = mocker.MagicMock()
         rect.setSize = mocker.MagicMock()
         rect.setVisible = mocker.MagicMock()
@@ -110,9 +125,9 @@ def mock_pyqtgraph(mocker: MockerFixture) -> MagicMock:
         rect.hoverPen = None
         rect.addScaleHandle = mocker.MagicMock()
         return rect
-    
+
     pg.RectROI = rect_roi_factory
-    
+
     # Mock TextItem
     def text_item_factory(*args, **kwargs):
         text = mocker.MagicMock()
@@ -120,12 +135,12 @@ def mock_pyqtgraph(mocker: MockerFixture) -> MagicMock:
         text.setVisible = mocker.MagicMock()
         text.setText = mocker.MagicMock()
         return text
-    
+
     pg.TextItem = text_item_factory
-    
+
     # Mock mkPen
     pg.mkPen = mocker.MagicMock(side_effect=lambda *args, **kwargs: mocker.MagicMock())
-    
+
     # Mock QtWidgets
     pg.QtWidgets = mocker.MagicMock()
     pg.QtWidgets.QScrollArea = mocker.MagicMock()
@@ -139,5 +154,5 @@ def mock_pyqtgraph(mocker: MockerFixture) -> MagicMock:
     pg.QtWidgets.QInputDialog = mocker.MagicMock()
     pg.QtWidgets.QMessageBox = mocker.MagicMock()
     pg.QtWidgets.QDialog = mocker.MagicMock()
-    
+
     return pg
