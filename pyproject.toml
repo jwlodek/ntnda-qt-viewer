@@ -18,10 +18,21 @@ dependencies = [
     "pyqtgraph>=0.14.0",
     "qtpy>=2.4.3",
 ]
+
 dynamic = ["version"]
 license.file = "LICENSE"
 readme = "README.md"
 requires-python = ">=3.11"
+
+[project.optional-dependencies]
+pyside6 = ["PySide6"]
+pyqt6 = ["PyQt6"]
+codecs = [
+    "blosc2",
+    "lz4",
+    "Pillow",
+    "imagecodecs",
+]
 
 [project.scripts]
 ntnda-qt-viewer = "ntnda_qt_viewer.__main__:main"
@@ -34,18 +45,16 @@ email = "jwlodek@bnl.gov"
 name = "Jakub Wlodek"
 
 [dependency-groups]
-gui = [
-    "PySide6",
-]
 dev = [
+    "ty",
     "copier",
     "pipdeptree",
     "pre-commit",
-    "pyright",
     "pytest",
     "pytest-cov",
+    "pytest-mock",
+    "PySide6",
     "ruff",
-    "tox-direct",
     "types-mock",
     "import-linter",
 ]
@@ -54,10 +63,6 @@ dev = [
 [tool.setuptools_scm]
 version_file = "src/ntnda_qt_viewer/_version.py"
 
-[tool.pyright]
-typeCheckingMode = "standard"
-reportMissingImports = false
-reportMissingTypeStubs = false
 
 [tool.pytest.ini_options]
 addopts = """
@@ -71,24 +76,6 @@ data_file = "/tmp/ntnda_qt_viewer.coverage"
 
 [tool.coverage.paths]
 source = ["src", "**/site-packages/"]
-
-[tool.tox]
-legacy_tox_ini = """
-[tox]
-skipsdist=True
-
-[testenv:{pre-commit,type-checking,tests}]
-direct = True
-passenv = *
-allowlist_externals =
-    pytest
-    pre-commit
-    pyright
-commands =
-    pre-commit: pre-commit run --all-files --show-diff-on-failure {posargs}
-    type-checking: pyright src tests {posargs}
-    tests: pytest --cov=ntnda_qt_viewer --cov-report term --cov-report xml:cov.xml {posargs}
-"""
 
 [tool.ruff]
 src = ["src", "tests"]
@@ -112,65 +99,3 @@ exclude = [
 
 [tool.importlinter]
 root_package = "ntnda_qt_viewer"
-
-# Switch to pixi when installing pypi and conda packages in the same env works again
-# [tool.pixi.workspace]
-# channels = ["conda-forge"]
-# platforms = ["linux-64"]
-
-# [tool.pixi.pypi-dependencies]
-# ntnda-qt-viewer = { path = ".", editable = true }
-
-# [tool.pixi.environments]
-# default = { solve-group = "default" }
-# dev = { features = ["dev"], solve-group = "default" }
-
-# [tool.pixi.tasks]
-# test = "pytest"
-# test-w-cov = "pytest --cov --cov-report=html"
-# lint = "pre-commit run --all-files"
-
-# [tool.pixi.dependencies]
-# pytest = ">=9.0.1,<10"
-# pre-commit = ">=4.4.0,<5"
-# ruff = ">=0.14.6,<0.15"
-# tox = ">=4.32.0,<5"
-# pytest-cov = ">=7.0.0,<8"
-# python = ">=3.12.12,<3.13"
-# import-linter = ">=2.7,<3"
-
-[tool.pixi.workspace]
-channels = ["conda-forge"]
-platforms = ["linux-64"]
-
-[tool.pixi.pypi-dependencies]
-ntnda-qt-viewer = { path = ".", editable = true }
-
-[tool.pixi.dependencies]
-python = "*"
-
-[tool.pixi.environments]
-default = { solve-group = "default" }
-dev = { features = ["dev"], solve-group = "default" }
-gui = { features = ["gui"], solve-group = "default" }
-py311 = { features = ["dev", "py311"], solve-group = "py311" }
-py312 = { features = ["dev", "py312"], solve-group = "py312" }
-py313 = { features = ["dev", "py313"], solve-group = "py313" }
-py314 = { features = ["dev", "py314"], solve-group = "py314" }
-
-[tool.pixi.feature.py311.dependencies]
-python = ">=3.11,<3.12"
-
-[tool.pixi.feature.py312.dependencies]
-python = ">=3.12,<3.13"
-
-[tool.pixi.feature.py313.dependencies]
-python = ">=3.13,<3.14"
-
-[tool.pixi.feature.py314.dependencies]
-python = ">=3.14,<3.15"
-
-[tool.pixi.feature.py313.tasks]
-lint = "pre-commit run --all-files"
-test = "pytest --cov=src/ntnda_qt_viewer --cov-report=xml:coverage.xml --cov-report=term"
-type-check = "pyright src/ntnda_qt_viewer tests"

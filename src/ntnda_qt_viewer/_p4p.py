@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import importlib
 import logging
+import zlib
+from io import BytesIO
+from typing import Any
 
 import numpy as np
 from p4p.client.thread import Context, Disconnected
@@ -11,6 +15,20 @@ from qtpy.QtCore import QObject, Signal
 __all__ = ["NTNDProvider"]
 
 logger = logging.getLogger(__name__)
+
+# areaDetector/ADCore maps NDDataType -> pv scalar code stored in codec.parameters
+_SCALAR_CODE_TO_DTYPE: dict[int, np.dtype] = {
+    1: np.dtype(np.int8),
+    2: np.dtype(np.int16),
+    3: np.dtype(np.int32),
+    4: np.dtype(np.int64),
+    5: np.dtype(np.uint8),
+    6: np.dtype(np.uint16),
+    7: np.dtype(np.uint32),
+    8: np.dtype(np.uint64),
+    9: np.dtype(np.float32),
+    10: np.dtype(np.float64),
+}
 
 
 class NTNDProvider(QObject):
@@ -26,7 +44,7 @@ class NTNDProvider(QObject):
     new_frame = Signal(object)
     disconnected = Signal()
 
-    def __init__(self, channel_name: str = "13SIM1:Pva1:Image") -> None:
+    def __init__(self, channel_name: str = "DEV:XSPD1:Pva1:Image") -> None:
         super().__init__()
         self._channel_name = channel_name
         self._ctxt: Context | None = None
@@ -49,7 +67,9 @@ class NTNDProvider(QObject):
         """Start monitoring the NTNDArray PV."""
         if self._subscription is not None:
             return
-        self._ctxt = Context("pva")
+        # Disable automatic NT unwrapping so compressed NTNDArray payloads
+        # are delivered as raw Value objects and can be decoded here.
+        self._ctxt = Context("pva", nt=False)
         self._subscription = self._ctxt.monitor(
             self._channel_name,
             self._monitor_callback,
@@ -78,9 +98,7 @@ class NTNDProvider(QObject):
                 logger.error("Monitor error on %s: %s", self._channel_name, value)
                 return
 
-            # p4p auto-unwraps NTNDArray into ntndarray (a shaped numpy array).
-            # Copy the data so it outlives the callback — p4p may reuse its buffer.
-            image = np.array(value, copy=True)
+            image = self._extract_image(value)
             if image.size == 0:
                 return
 
@@ -89,3 +107,172 @@ class NTNDProvider(QObject):
             logger.exception(
                 "Unhandled error in monitor callback for %s", self._channel_name
             )
+
+    def _extract_image(self, value: object) -> np.ndarray:
+        """Extract uncompressed image data from an NTNDArray callback value."""
+        raw = getattr(value, "raw", value)
+
+        if not self._has_key(raw, "value"):
+            return np.array(value, copy=True)
+
+        codec_name = str(self._raw_get(raw, "codec.name", "") or "").strip().lower()
+        if not codec_name:
+            return self._extract_uncompressed_ntndarray(raw)
+
+        return self._decompress_ntndarray(raw, codec_name)
+
+    def _extract_uncompressed_ntndarray(self, raw) -> np.ndarray:
+        data = np.asarray(self._raw_get(raw, "value", []))
+        shape = self._shape_from_dimension(self._raw_get(raw, "dimension", []))
+        if shape:
+            count = int(np.prod(shape))
+            data = data[:count].reshape(shape)
+        return np.array(data, copy=True)
+
+    def _decompress_ntndarray(self, raw, codec_name: str) -> np.ndarray:
+        compressed = int(self._raw_get(raw, "compressedSize", 0))
+        uncompressed = int(self._raw_get(raw, "uncompressedSize", 0))
+        payload = np.asarray(self._raw_get(raw, "value", []))
+        payload_bytes = payload.view(np.uint8).tobytes()[:compressed]
+
+        dtype = self._dtype_from_codec_parameters(
+            self._raw_get(raw, "codec.parameters", 0)
+        )
+        shape = self._shape_from_dimension(self._raw_get(raw, "dimension", []))
+        n_elems = int(np.prod(shape)) if shape else 0
+
+        # JPEG decode returns an image array directly in most libraries.
+        if codec_name == "jpeg":
+            image = self._decode_jpeg(payload_bytes, dtype)
+            if shape and image.size == n_elems:
+                return np.array(image.reshape(shape), copy=True)
+            return np.array(image, copy=True)
+
+        data_bytes = self._decompress_bytes(codec_name, payload_bytes, uncompressed)
+        arr = np.frombuffer(data_bytes, dtype=dtype, count=n_elems)
+        if shape:
+            arr = arr.reshape(shape)
+        return np.array(arr, copy=True)
+
+    def _dtype_from_codec_parameters(self, parameters: Any) -> np.dtype:
+        try:
+            code = int(parameters)
+        except Exception:
+            code = 0
+        dtype = _SCALAR_CODE_TO_DTYPE.get(code)
+        if dtype is None:
+            raise ValueError(f"Unsupported codec parameter type code: {code}")
+        return dtype
+
+    def _shape_from_dimension(self, dimension: Any) -> tuple[int, ...]:
+        sizes: list[int] = []
+        for d in dimension:
+            if isinstance(d, dict):
+                size = d.get("size")
+            else:
+                size = getattr(d, "size", None)
+            if size is None:
+                continue
+            sizes.append(int(size))
+        sizes.reverse()
+        return tuple(sizes)
+
+    def _raw_get(self, raw: Any, key: str, default: object = None) -> Any:
+        try:
+            return raw[key]
+        except Exception:
+            getter = getattr(raw, "get", None)
+            if callable(getter):
+                try:
+                    return getter(key, default)
+                except Exception:
+                    pass
+        return default
+
+    def _has_key(self, raw: Any, key: str) -> bool:
+        try:
+            value = raw[key]
+        except Exception:
+            return False
+        return value is not None
+
+    def _decompress_bytes(
+        self, codec_name: str, data: bytes, uncompressed: int
+    ) -> bytes:
+        if codec_name == "zlib":
+            return zlib.decompress(data)
+
+        if codec_name == "blosc":
+            try:
+                blosc2 = importlib.import_module("blosc2")
+                return blosc2.decompress(data)
+            except ImportError:
+                try:
+                    blosc = importlib.import_module("blosc")
+                    return blosc.decompress(data)
+                except ImportError as exc:
+                    raise RuntimeError(
+                        "Codec 'blosc' requires Python package 'blosc2' or 'blosc'"
+                    ) from exc
+
+        if codec_name == "lz4":
+            try:
+                lz4_block = importlib.import_module("lz4.block")
+                return lz4_block.decompress(data, uncompressed_size=uncompressed)
+            except ImportError:
+                pass
+
+            try:
+                imagecodecs = importlib.import_module("imagecodecs")
+
+                if hasattr(imagecodecs, "lz4_decode"):
+                    return bytes(imagecodecs.lz4_decode(data))
+            except ImportError:
+                pass
+
+            raise RuntimeError(
+                "Codec 'lz4' requires Python package 'lz4' or 'imagecodecs'"
+            )
+
+        if codec_name == "lz4hdf5":
+            try:
+                imagecodecs = importlib.import_module("imagecodecs")
+
+                # Prefer the explicit lz4hdf5 API name when present.
+                if hasattr(imagecodecs, "lz4hdf5_decode"):
+                    return bytes(imagecodecs.lz4hdf5_decode(data))
+                if hasattr(imagecodecs, "lz4h5_decode"):
+                    return bytes(imagecodecs.lz4h5_decode(data))
+            except ImportError:
+                pass
+            raise RuntimeError("Codec 'lz4hdf5' requires Python package 'imagecodecs'")
+
+        if codec_name == "bslz4":
+            try:
+                imagecodecs = importlib.import_module("imagecodecs")
+
+                if hasattr(imagecodecs, "bslz4_decode"):
+                    return bytes(imagecodecs.bslz4_decode(data))
+            except ImportError:
+                pass
+            raise RuntimeError("Codec 'bslz4' requires Python package 'imagecodecs'")
+
+        raise RuntimeError(f"Unsupported codec: {codec_name}")
+
+    def _decode_jpeg(self, data: bytes, dtype: np.dtype) -> np.ndarray:
+        try:
+            imagecodecs = importlib.import_module("imagecodecs")
+            decoded = imagecodecs.jpeg_decode(data)
+            return np.asarray(decoded, dtype=dtype)
+        except ImportError:
+            pass
+
+        try:
+            Image = importlib.import_module("PIL.Image")
+
+            with Image.open(BytesIO(data)) as img:
+                return np.asarray(img, dtype=dtype)
+        except ImportError as exc:
+            raise RuntimeError(
+                "Codec 'jpeg' requires Python package 'imagecodecs' or 'Pillow'"
+            ) from exc
