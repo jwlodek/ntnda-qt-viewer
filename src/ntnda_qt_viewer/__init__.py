@@ -7,6 +7,6 @@
 """
 
 from ._version import __version__
-from ._widget import NTNDViewerWidget
+from ._widget import NTNDAViewerWidget
 
-__all__ = ["__version__", "NTNDViewerWidget"]
+__all__ = ["__version__", "NTNDAViewerWidget"]

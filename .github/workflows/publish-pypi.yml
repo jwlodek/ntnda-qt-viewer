@@ -45,7 +45,7 @@ jobs:
 
       - name: Install produced wheel
         run: |
-          uv pip install dist/*.whl --system
+          uv pip install "$(ls dist/*.whl)[pyside6]" --system
 
       - name: Verify installation
         run: |

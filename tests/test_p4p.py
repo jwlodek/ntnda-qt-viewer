@@ -10,18 +10,18 @@ from pytest_mock import MockerFixture
 
 
 def test_ntnda_provider_creation() -> None:
-    """Test creating an NTNDProvider instance."""
-    from ntnda_qt_viewer._p4p import NTNDProvider
+    """Test creating an NTNDAProvider instance."""
+    from ntnda_qt_viewer._p4p import NTNDAProvider
 
-    provider = NTNDProvider(channel_name="DEV:XSPD1:Pva1:Image")
+    provider = NTNDAProvider(channel_name="DEV:XSPD1:Pva1:Image")
     assert provider.channel_name == "DEV:XSPD1:Pva1:Image"
 
 
 def test_ntnda_provider_channel_name_property() -> None:
     """Test getting and setting channel name."""
-    from ntnda_qt_viewer._p4p import NTNDProvider
+    from ntnda_qt_viewer._p4p import NTNDAProvider
 
-    provider = NTNDProvider()
+    provider = NTNDAProvider()
     assert provider.channel_name == "DEV:XSPD1:Pva1:Image"
 
     provider.channel_name = "DEV:NEW:PV"
@@ -29,24 +29,24 @@ def test_ntnda_provider_channel_name_property() -> None:
 
 
 def test_ntnda_provider_signals(qapp) -> None:
-    """Test that NTNDProvider has correct signals."""
-    from ntnda_qt_viewer._p4p import NTNDProvider
+    """Test that NTNDAProvider has correct signals."""
+    from ntnda_qt_viewer._p4p import NTNDAProvider
 
-    provider = NTNDProvider()
+    provider = NTNDAProvider()
     assert hasattr(provider, "new_frame")
     assert hasattr(provider, "disconnected")
 
 
 def test_ntnda_provider_start(mocker: MockerFixture) -> None:
     """Test starting the provider."""
-    from ntnda_qt_viewer._p4p import NTNDProvider
+    from ntnda_qt_viewer._p4p import NTNDAProvider
 
     mock_context = mocker.MagicMock()
     mocker.patch("ntnda_qt_viewer._p4p.Context", return_value=mock_context)
     mock_subscription = mocker.MagicMock()
     mock_context.monitor.return_value = mock_subscription
 
-    provider = NTNDProvider()
+    provider = NTNDAProvider()
     provider.start()
 
     assert provider._subscription is not None
@@ -56,14 +56,14 @@ def test_ntnda_provider_start(mocker: MockerFixture) -> None:
 
 def test_ntnda_provider_stop(mocker: MockerFixture) -> None:
     """Test stopping the provider."""
-    from ntnda_qt_viewer._p4p import NTNDProvider
+    from ntnda_qt_viewer._p4p import NTNDAProvider
 
     mock_context = mocker.MagicMock()
     mocker.patch("ntnda_qt_viewer._p4p.Context", return_value=mock_context)
     mock_subscription = mocker.MagicMock()
     mock_context.monitor.return_value = mock_subscription
 
-    provider = NTNDProvider()
+    provider = NTNDAProvider()
     provider.start()
     provider.stop()
 
@@ -86,9 +86,9 @@ def test_ntnda_provider_dtype_mapping() -> None:
 
 def test_ntnda_provider_extract_uncompressed(mocker: MockerFixture, qapp) -> None:
     """Test extracting uncompressed image data."""
-    from ntnda_qt_viewer._p4p import NTNDProvider
+    from ntnda_qt_viewer._p4p import NTNDAProvider
 
-    provider = NTNDProvider()
+    provider = NTNDAProvider()
 
     # Create mock raw NTNDArray value
     data = np.array([1, 2, 3, 4, 5, 6], dtype=np.uint8)
@@ -112,9 +112,9 @@ def test_ntnda_provider_extract_uncompressed(mocker: MockerFixture, qapp) -> Non
 
 def test_ntnda_provider_shape_from_dimension(mocker: MockerFixture, qapp) -> None:
     """Test converting dimension to shape."""
-    from ntnda_qt_viewer._p4p import NTNDProvider
+    from ntnda_qt_viewer._p4p import NTNDAProvider
 
-    provider = NTNDProvider()
+    provider = NTNDAProvider()
 
     # Create mock dimension
     dimension = [
@@ -129,9 +129,9 @@ def test_ntnda_provider_shape_from_dimension(mocker: MockerFixture, qapp) -> Non
 
 def test_ntnda_provider_dtype_from_codec_parameters(qapp) -> None:
     """Test getting dtype from codec parameters."""
-    from ntnda_qt_viewer._p4p import NTNDProvider
+    from ntnda_qt_viewer._p4p import NTNDAProvider
 
-    provider = NTNDProvider()
+    provider = NTNDAProvider()
 
     # Test int8 (code 1)
     dtype = provider._dtype_from_codec_parameters(1)
@@ -148,9 +148,9 @@ def test_ntnda_provider_dtype_from_codec_parameters(qapp) -> None:
 
 def test_ntnda_provider_invalid_codec_parameter(qapp) -> None:
     """Test handling invalid codec parameters."""
-    from ntnda_qt_viewer._p4p import NTNDProvider
+    from ntnda_qt_viewer._p4p import NTNDAProvider
 
-    provider = NTNDProvider()
+    provider = NTNDAProvider()
 
     with pytest.raises(ValueError):
         provider._dtype_from_codec_parameters(999)
@@ -158,9 +158,9 @@ def test_ntnda_provider_invalid_codec_parameter(qapp) -> None:
 
 def test_ntnda_provider_extract_image_fallback(qapp) -> None:
     """Test extract_image fallback for non-NTNDArray values."""
-    from ntnda_qt_viewer._p4p import NTNDProvider
+    from ntnda_qt_viewer._p4p import NTNDAProvider
 
-    provider = NTNDProvider()
+    provider = NTNDAProvider()
 
     # Simple array value
     value = np.array([1, 2, 3, 4], dtype=np.uint8)

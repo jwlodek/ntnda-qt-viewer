@@ -47,13 +47,13 @@ def test_status_indicator_set_connected(mocker: MockerFixture, qapp) -> None:
 
 def test_widget_clear_roi_overlays(mocker: MockerFixture, qapp) -> None:
     """Test clearing ROI overlays."""
-    from ntnda_qt_viewer._widget import NTNDViewerWidget, _ROIModel
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget, _ROIModel
 
     mock_provider = mocker.MagicMock()
-    mocker.patch("ntnda_qt_viewer._widget.NTNDProvider", return_value=mock_provider)
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDViewerWidget(qapp)
+    widget = NTNDAViewerWidget(qapp)
 
     # Add some mock ROI models
     mock_rect = mocker.MagicMock()
@@ -71,13 +71,13 @@ def test_widget_clear_roi_overlays(mocker: MockerFixture, qapp) -> None:
 
 def test_widget_clear_roi_controls(mocker: MockerFixture, qapp) -> None:
     """Test clearing ROI controls."""
-    from ntnda_qt_viewer._widget import NTNDViewerWidget
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mock_provider = mocker.MagicMock()
-    mocker.patch("ntnda_qt_viewer._widget.NTNDProvider", return_value=mock_provider)
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDViewerWidget(qapp)
+    widget = NTNDAViewerWidget(qapp)
 
     # Add mock controls
     widget._roi_enable_checks.append(mocker.MagicMock())
@@ -93,13 +93,13 @@ def test_widget_clear_roi_controls(mocker: MockerFixture, qapp) -> None:
 
 def test_widget_ensure_roi_context(mocker: MockerFixture, qapp, mock_context) -> None:
     """Test getting or creating ROI context."""
-    from ntnda_qt_viewer._widget import NTNDViewerWidget
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mock_provider = mocker.MagicMock()
-    mocker.patch("ntnda_qt_viewer._widget.NTNDProvider", return_value=mock_provider)
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDViewerWidget(qapp)
+    widget = NTNDAViewerWidget(qapp)
 
     # Mock the Context creation
     mocker.patch("ntnda_qt_viewer._widget.Context", return_value=mock_context)
@@ -113,13 +113,13 @@ def test_widget_ensure_roi_context(mocker: MockerFixture, qapp, mock_context) ->
 
 def test_widget_on_new_frame(mocker: MockerFixture, qapp) -> None:
     """Test handling new frame."""
-    from ntnda_qt_viewer._widget import NTNDViewerWidget
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mock_provider = mocker.MagicMock()
-    mocker.patch("ntnda_qt_viewer._widget.NTNDProvider", return_value=mock_provider)
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDViewerWidget(qapp)
+    widget = NTNDAViewerWidget(qapp)
 
     image = np.random.randint(0, 256, (100, 100), dtype=np.uint8)
     widget._on_new_frame(image)
@@ -129,13 +129,13 @@ def test_widget_on_new_frame(mocker: MockerFixture, qapp) -> None:
 
 def test_widget_manual_levels(mocker: MockerFixture, qapp) -> None:
     """Test getting manual levels for scaling."""
-    from ntnda_qt_viewer._widget import NTNDViewerWidget
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mock_provider = mocker.MagicMock()
-    mocker.patch("ntnda_qt_viewer._widget.NTNDProvider", return_value=mock_provider)
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDViewerWidget(qapp)
+    widget = NTNDAViewerWidget(qapp)
 
     # Initially None when manual scaling disabled
     widget._manual_scaling_enabled = False
@@ -152,13 +152,13 @@ def test_widget_manual_levels(mocker: MockerFixture, qapp) -> None:
 
 def test_widget_refresh_display_increments_fps(mocker: MockerFixture, qapp) -> None:
     """Test that refresh display increments FPS counter."""
-    from ntnda_qt_viewer._widget import NTNDViewerWidget
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mock_provider = mocker.MagicMock()
-    mocker.patch("ntnda_qt_viewer._widget.NTNDProvider", return_value=mock_provider)
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDViewerWidget(qapp)
+    widget = NTNDAViewerWidget(qapp)
 
     initial_count = widget._fps_frame_count
 
@@ -172,13 +172,13 @@ def test_widget_refresh_display_increments_fps(mocker: MockerFixture, qapp) -> N
 
 def test_widget_normalize_roi_suffix_normalization(mocker: MockerFixture, qapp) -> None:
     """Test ROI suffix normalization edge cases."""
-    from ntnda_qt_viewer._widget import NTNDViewerWidget
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mock_provider = mocker.MagicMock()
-    mocker.patch("ntnda_qt_viewer._widget.NTNDProvider", return_value=mock_provider)
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDViewerWidget(qapp)
+    widget = NTNDAViewerWidget(qapp)
 
     # Test with whitespace
     suffixes = widget._normalize_roi_suffixes(["  ROI1  ", "ROI2:"])
@@ -193,13 +193,13 @@ def test_widget_normalize_roi_suffix_normalization(mocker: MockerFixture, qapp) 
 
 def test_widget_pva_suffix_action_gating(mocker: MockerFixture, qapp) -> None:
     """Test that PVA suffix action is gated during connection."""
-    from ntnda_qt_viewer._widget import NTNDViewerWidget
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mock_provider = mocker.MagicMock()
-    mocker.patch("ntnda_qt_viewer._widget.NTNDProvider", return_value=mock_provider)
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDViewerWidget(qapp)
+    widget = NTNDAViewerWidget(qapp)
 
     # Initially should be enabled
     assert widget._pva_suffix_action.isEnabled()
@@ -215,13 +215,13 @@ def test_widget_pva_suffix_action_gating(mocker: MockerFixture, qapp) -> None:
 
 def test_widget_refresh_max_framerate_action_text(mocker: MockerFixture, qapp) -> None:
     """Test updating max framerate action text."""
-    from ntnda_qt_viewer._widget import NTNDViewerWidget
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mock_provider = mocker.MagicMock()
-    mocker.patch("ntnda_qt_viewer._widget.NTNDProvider", return_value=mock_provider)
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDViewerWidget(qapp)
+    widget = NTNDAViewerWidget(qapp)
 
     # Set FPS and refresh text
     widget._max_fps = 60
@@ -233,13 +233,13 @@ def test_widget_refresh_max_framerate_action_text(mocker: MockerFixture, qapp) -
 
 def test_widget_exit_set_roi_mode(mocker: MockerFixture, qapp) -> None:
     """Test exiting ROI set mode."""
-    from ntnda_qt_viewer._widget import NTNDViewerWidget
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mock_provider = mocker.MagicMock()
-    mocker.patch("ntnda_qt_viewer._widget.NTNDProvider", return_value=mock_provider)
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDViewerWidget(qapp)
+    widget = NTNDAViewerWidget(qapp)
 
     # Enter mode
     widget._set_roi_mode_enabled(True)
@@ -252,13 +252,13 @@ def test_widget_exit_set_roi_mode(mocker: MockerFixture, qapp) -> None:
 
 def test_widget_transform_for_scaling(mocker: MockerFixture, qapp) -> None:
     """Test image transformation for scaling."""
-    from ntnda_qt_viewer._widget import NTNDViewerWidget
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mock_provider = mocker.MagicMock()
-    mocker.patch("ntnda_qt_viewer._widget.NTNDProvider", return_value=mock_provider)
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDViewerWidget(qapp)
+    widget = NTNDAViewerWidget(qapp)
 
     image = np.random.randint(0, 256, (100, 100), dtype=np.uint8)
 

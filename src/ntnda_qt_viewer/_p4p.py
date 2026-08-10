@@ -12,7 +12,7 @@ import numpy as np
 from p4p.client.thread import Context, Disconnected
 from qtpy.QtCore import QObject, Signal
 
-__all__ = ["NTNDProvider"]
+__all__ = ["NTNDAProvider"]
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ _SCALAR_CODE_TO_DTYPE: dict[int, np.dtype] = {
 }
 
 
-class NTNDProvider(QObject):
+class NTNDAProvider(QObject):
     """Subscribes to an NTNDArray PV via p4p and emits frames as numpy arrays.
 
     The p4p monitor callback runs in a worker thread. Received images are

@@ -6,7 +6,7 @@ from argparse import ArgumentParser
 from qtpy.QtWidgets import QApplication
 
 from . import __version__
-from ._widget import NTNDViewerWidget
+from ._widget import NTNDAViewerWidget
 
 __all__ = ["main"]
 
@@ -34,7 +34,7 @@ def main() -> None:
     args = parser.parse_args()
 
     app = QApplication.instance() or QApplication(sys.argv)
-    widget = NTNDViewerWidget(
+    widget = NTNDAViewerWidget(
         prefix=args.prefix,
         pva_suffix=args.pva_suffix,
         roi_suffixes=args.roi_suffixes,
