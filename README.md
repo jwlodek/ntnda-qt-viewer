@@ -30,6 +30,12 @@ separately:
 pip install PySide6
 ```
 
+OR
+
+```bash
+pip install ntnda-qt-viewer[pyside6]
+```
+
 To support compressed NTNDArray codecs (zlib, blosc, lz4/lz4hdf5, bslz4, jpeg)
 install optional codec dependencies:
 
@@ -54,9 +60,9 @@ ROI PVs are written as `<prefix><roi-suffix>{MinX,MinY,SizeX,SizeY}`.
 Or embed the widget in your own Qt application:
 
 ```python
-from ntnda_qt_viewer import NTNDViewerWidget
+from ntnda_qt_viewer import NTNDAViewerWidget
 
-widget = NTNDViewerWidget(
+widget = NTNDAViewerWidget(
     prefix="DEV:XSPD1:",
     pva_suffix="Pva1:",
     roi_suffixes=["ROI1:", "ROI2:", "ROI3:", "ROI4:"],
@@ -66,16 +72,14 @@ widget.show()
 
 ## Development
 
-This project uses [pixi](https://pixi.sh/) for environment management:
+This project uses [uv](https://astral.sh/uv) for environment management:
 
 ```bash
-pixi install
-pixi run lint
-pixi run test
+uv sync
+uv run --frozen pytest
+uv run --frozen ruff check
+uv run --frozen ty check
 ```
-
-Environments for Python 3.11–3.14 are available (`py311`, `py312`, `py313`,
-`py314`).
 
 ## License
 

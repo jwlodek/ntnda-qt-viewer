@@ -35,9 +35,9 @@ from qtpy.QtWidgets import (
     QWidget,
 )
 
-from ._p4p import NTNDProvider
+from ._p4p import NTNDAProvider
 
-__all__ = ["NTNDViewerWidget"]
+__all__ = ["NTNDAViewerWidget"]
 
 logger = logging.getLogger(__name__)
 
@@ -239,7 +239,7 @@ class _StatusIndicator(QLabel):
         )
 
 
-class NTNDViewerWidget(QWidget):
+class NTNDAViewerWidget(QWidget):
     """A Qt widget using pyqtgraph ImageView to display NTNDArray images.
 
     Includes draggable crosshair lines on the image and synchronised
@@ -265,7 +265,7 @@ class NTNDViewerWidget(QWidget):
         self._pva_suffix = pva_suffix
         self._roi_suffixes = roi_suffixes or _DEFAULT_ROI_SUFFIXES.copy()
         self._auto_resize_on_first_image = auto_resize_on_first_image
-        self._provider = NTNDProvider(self._build_image_channel())
+        self._provider = NTNDAProvider(self._build_image_channel())
         self._current_image: np.ndarray | None = None
         self._pending_image: np.ndarray | None = None
         self._connected = False
