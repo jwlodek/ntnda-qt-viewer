@@ -53,6 +53,7 @@ dev = [
     "pytest",
     "pytest-cov",
     "pytest-mock",
+    "PySide6",
     "ruff",
     "types-mock",
     "import-linter",
