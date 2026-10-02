@@ -59,10 +59,6 @@ _ORIENTATION_PRESETS: dict[str, dict[str, str | bool]] = {
     "rotate180": {"transform": "rotate180", "invert_x": False, "invert_y": False},
 }
 
-# Use OpenGL for smooth bilinear texture filtering (reduces aliasing)
-pg.setConfigOptions(useOpenGL=True, imageAxisOrder="row-major")
-
-
 @dataclass
 class _ROIModel:
     suffix: str
@@ -349,7 +345,8 @@ class NTNDAViewerWidget(QWidget):
         root.addLayout(controls)
 
         # --- graphics layout: aligned image + profile plots ---
-        self._glw: Any = pg.GraphicsLayoutWidget()
+        # Set per-widget rather than via global pg config, which host apps may override.
+        self._glw: Any = pg.GraphicsLayoutWidget(useOpenGL=True)
         if isinstance(self._glw, QWidget):
             root.addWidget(self._glw, stretch=1)
 
@@ -378,7 +375,7 @@ class NTNDAViewerWidget(QWidget):
         self._image_plot.getViewBox().invertX(bool(self._orientation["invert_x"]))
         self._image_plot.getViewBox().invertY(bool(self._orientation["invert_y"]))
         vb.set_roi_drag_mode(False, self._on_set_roi_rectangle)
-        self._image_item = pg.ImageItem(autoDownsample=True)
+        self._image_item = pg.ImageItem(autoDownsample=True, axisOrder="row-major")
         self._image_plot.addItem(self._image_item)
 
         self._create_roi_overlays()
@@ -400,8 +397,11 @@ class NTNDAViewerWidget(QWidget):
         self._v_image_line = pg.InfiniteLine(
             pos=0, angle=90, movable=True, pen=pg.mkPen("y", width=2)
         )
-        self._image_plot.addItem(self._h_image_line)
-        self._image_plot.addItem(self._v_image_line)
+        # Keep crosshairs above ROI overlays, which may be re-created later.
+        for line in (self._h_image_line, self._v_image_line):
+            line.setZValue(100)
+            line.setVisible(self._show_profile_lines)
+            self._image_plot.addItem(line)
 
         # Row 1, Col 1: horizontal profile plot (bottom, under image only)
         self._h_profile_plot = self._glw.addPlot(row=1, col=1)
