@@ -346,7 +346,8 @@ class NTNDAViewerWidget(QWidget):
 
         # --- graphics layout: aligned image + profile plots ---
         # Set per-widget rather than via global pg config, which host apps may override.
-        self._glw: Any = pg.GraphicsLayoutWidget(useOpenGL=True)
+        self._glw: Any = pg.GraphicsLayoutWidget()
+        self._glw.useOpenGL(True)
         if isinstance(self._glw, QWidget):
             root.addWidget(self._glw, stretch=1)
 
