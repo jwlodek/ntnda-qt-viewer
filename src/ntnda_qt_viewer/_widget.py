@@ -257,6 +257,7 @@ class NTNDAViewerWidget(QWidget):
         show_roi_controls: bool = True,
         v_profile_position: str = "left",
         h_profile_position: str = "bottom",
+        use_opengl: bool = False,
     ) -> None:
         # Backward compatibility with callers that passed QApplication first.
         if isinstance(prefix, QApplication):
@@ -296,6 +297,7 @@ class NTNDAViewerWidget(QWidget):
         self._current_colormap = self._selected_colormap
         self._show_profile_lines = show_profile_lines
         self._show_roi_controls = show_roi_controls
+        self._use_opengl = use_opengl
         self._v_profile_position = v_profile_position
         self._h_profile_position = h_profile_position
         self._show_roi_labels = False
@@ -368,9 +370,10 @@ class NTNDAViewerWidget(QWidget):
         root.addLayout(controls)
 
         # --- graphics layout: aligned image + profile plots ---
-        # Set per-widget rather than via global pg config, which host apps may override.
         self._glw: Any = pg.GraphicsLayoutWidget()
-        self._glw.useOpenGL(True)
+        # Off by default: a QOpenGLWidget viewport can stop popup menus from painting.
+        if self._use_opengl:
+            self._glw.useOpenGL(True)
         if isinstance(self._glw, QWidget):
             root.addWidget(self._glw, stretch=1)
 
@@ -493,6 +496,13 @@ class NTNDAViewerWidget(QWidget):
         self._show_roi_labels_action.setChecked(self._show_roi_labels)
         self._show_roi_labels_action.toggled.connect(self._on_show_roi_labels_toggled)
 
+        self._show_roi_controls_action = menu.addAction("Show ROI Controls")
+        self._show_roi_controls_action.setCheckable(True)
+        self._show_roi_controls_action.setChecked(self._show_roi_controls)
+        self._show_roi_controls_action.toggled.connect(
+            self._on_show_roi_controls_toggled
+        )
+
         v_pos_menu = menu.addMenu("Vertical Profile Position")
         self._v_profile_position_actions: dict[str, QAction] = {}
         v_pos_group = QActionGroup(self)
@@ -537,6 +547,10 @@ class NTNDAViewerWidget(QWidget):
             self._colormap_actions[name] = action
 
         self._settings_btn.setMenu(menu)
+
+    def _on_show_roi_controls_toggled(self, visible: bool) -> None:
+        self._show_roi_controls = visible
+        self._roi_controls_widget.setVisible(visible)
 
     def _set_v_profile_position(self, position: str) -> None:
         if position not in _V_PROFILE_POSITIONS:
