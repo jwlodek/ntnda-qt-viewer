@@ -1,7 +1,7 @@
 """Interface for ``python -m napari_ntnd``."""
 
 import sys
-from argparse import ArgumentParser, BooleanOptionalAction
+from argparse import ArgumentParser
 
 from qtpy.QtWidgets import QApplication
 
@@ -16,9 +16,7 @@ def main() -> None:
     parser.add_argument("-v", "--version", action="version", version=__version__)
     parser.add_argument(
         "prefix",
-        nargs="?",
-        default="DEV:XSPD1:",
-        help="Top-level PV prefix (default: %(default)s)",
+        help="Top-level PV prefix, or the full array PV with --raw-waveform",
     )
     parser.add_argument(
         "--pva-suffix",
@@ -26,43 +24,48 @@ def main() -> None:
         help="PVA plugin suffix used to form image PV as <prefix><pva-suffix>Image",
     )
     parser.add_argument(
-        "--roi-suffixes",
-        nargs="*",
-        default=["ROI1:", "ROI2:", "ROI3:", "ROI4:"],
-        help="ROI plugin suffixes (default: %(default)s)",
+        "--num-rois",
+        type=int,
+        default=4,
+        help="Number of ROIs (default: %(default)s)",
     )
     parser.add_argument(
-        "--ntndarray",
-        action=BooleanOptionalAction,
-        default=True,
-        help="Target is an NTNDArray (default). With --no-ntndarray, prefix is "
-        "the full PV of a flat array and --image-shape is required",
+        "--roi-suffix-pattern",
+        default="ROI{}:",
+        help="Format string for ROI suffixes, given 1..N (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--raw-waveform",
+        action="store_true",
+        help="Target is a flat array instead of an NTNDArray; prefix is the full "
+        "PV and --image-shape is required",
     )
     parser.add_argument(
         "--image-shape",
         nargs=2,
         type=int,
         metavar=("ROWS", "COLS"),
-        help="Image size for --no-ntndarray",
+        help="Image size for --raw-waveform",
     )
     parser.add_argument(
         "--color",
         action="store_true",
-        help="Flat array is interleaved RGB (--no-ntndarray only)",
+        help="Flat array is interleaved RGB (--raw-waveform only)",
     )
     args = parser.parse_args()
-    if not args.ntndarray and args.image_shape is None:
-        parser.error("--image-shape is required with --no-ntndarray")
-    if args.ntndarray and (args.image_shape or args.color):
-        parser.error("--image-shape and --color require --no-ntndarray")
+    if args.raw_waveform and args.image_shape is None:
+        parser.error("--image-shape is required with --raw-waveform")
+    if not args.raw_waveform and (args.image_shape or args.color):
+        parser.error("--image-shape and --color require --raw-waveform")
 
     app = QApplication.instance() or QApplication(sys.argv)
     widget = NTNDAViewerWidget(
         prefix=args.prefix,
         pva_suffix=args.pva_suffix,
-        roi_suffixes=args.roi_suffixes,
+        num_rois=args.num_rois,
+        roi_suffix_pattern=args.roi_suffix_pattern,
         auto_resize_on_first_image=True,
-        ntndarray=args.ntndarray,
+        raw_waveform=args.raw_waveform,
         image_shape=tuple(args.image_shape) if args.image_shape else None,
         color=args.color,
     )

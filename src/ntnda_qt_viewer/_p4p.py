@@ -48,15 +48,15 @@ class NTNDAProvider(QObject):
         self,
         channel_name: str = "DEV:XSPD1:Pva1:Image",
         *,
-        ntndarray: bool = True,
+        raw_waveform: bool = False,
         image_shape: tuple[int, int] | None = None,
         color: bool = False,
     ) -> None:
         super().__init__()
-        if not ntndarray and image_shape is None:
-            raise ValueError("image_shape is required when ntndarray=False")
+        if raw_waveform and image_shape is None:
+            raise ValueError("image_shape is required when raw_waveform=True")
         self._channel_name = channel_name
-        self._ntndarray = ntndarray
+        self._raw_waveform = raw_waveform
         # Only used for non-NTNDArray PVs, whose payload is a flat array.
         self._image_shape = image_shape
         self._color = color
@@ -123,7 +123,7 @@ class NTNDAProvider(QObject):
 
     def _extract_image(self, value: object) -> np.ndarray:
         """Extract image data from an NTNDArray or a flat array PV."""
-        if self._ntndarray or self._image_shape is None:
+        if not self._raw_waveform or self._image_shape is None:
             return self._extract_ntndarray_image(value)
         return self._extract_raw_array_image(value, self._image_shape)
 

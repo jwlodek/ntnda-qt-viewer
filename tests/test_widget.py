@@ -16,7 +16,7 @@ def test_widget_creation(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
     assert widget is not None
     assert isinstance(widget, QWidget)
 
@@ -29,7 +29,7 @@ def test_widget_initial_state(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
 
     # Check initial values
     assert widget._max_fps == 30
@@ -46,7 +46,7 @@ def test_normalize_roi_suffixes(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
 
     # Test normalization
     suffixes = widget._normalize_roi_suffixes(["ROI1", "ROI2:", "", "ROI3"])
@@ -65,7 +65,7 @@ def test_widget_set_max_framerate(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
     initial_fps = widget._max_fps
 
     # Set new framerate
@@ -89,7 +89,7 @@ def test_widget_roi_field_channel(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
     widget._prefix = "DEV:XSPD1:Pva1:"
 
     # Test channel naming
@@ -108,7 +108,7 @@ def test_widget_build_image_channel(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
     widget._prefix = "DEV:XSPD1:Pva1:"
     widget._pva_suffix = "Image"
 
@@ -123,12 +123,12 @@ def test_widget_raw_array_uses_prefix_as_pv(mocker: MockerFixture, qapp) -> None
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
     widget = NTNDAViewerWidget(
-        "DEV:Array:", ntndarray=False, image_shape=(480, 640), color=True
+        "DEV:Array:", raw_waveform=True, image_shape=(480, 640), color=True
     )
 
     assert widget._build_image_channel() == "DEV:Array:"
     provider_cls.assert_called_once_with(
-        "DEV:Array:", ntndarray=False, image_shape=(480, 640), color=True
+        "DEV:Array:", raw_waveform=True, image_shape=(480, 640), color=True
     )
     assert widget._roi_field_channel("ROI1:", "MinX") == "DEV:Array:ROI1:MinX"
 
@@ -142,11 +142,81 @@ def test_widget_invalid_image_shape_options(mocker: MockerFixture, qapp) -> None
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
     with pytest.raises(ValueError):
-        NTNDAViewerWidget("DEV:Array:", ntndarray=False)
+        NTNDAViewerWidget("DEV:Array:", raw_waveform=True)
     with pytest.raises(ValueError):
-        NTNDAViewerWidget("DEV:Array:", ntndarray=False, image_shape=(0, 640))
+        NTNDAViewerWidget("DEV:Array:", raw_waveform=True, image_shape=(0, 640))
     with pytest.raises(ValueError):
         NTNDAViewerWidget("DEV:", image_shape=(480, 640))
+
+
+def test_widget_num_rois_with_pattern(mocker: MockerFixture, qapp) -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    widget = NTNDAViewerWidget("DEV:", num_rois=3, roi_suffix_pattern="Roi{:02d}:")
+    assert widget._roi_suffixes == ["Roi01:", "Roi02:", "Roi03:"]
+
+    widget = NTNDAViewerWidget("DEV:", num_rois=2)
+    assert widget._roi_suffixes == ["ROI1:", "ROI2:"]
+
+    widget = NTNDAViewerWidget("DEV:", num_rois=0)
+    assert widget._roi_suffixes == []
+
+    widget = NTNDAViewerWidget("DEV:")
+    assert widget._roi_suffixes == ["ROI1:", "ROI2:", "ROI3:", "ROI4:"]
+
+
+def test_widget_num_rois_invalid(mocker: MockerFixture, qapp) -> None:
+    import pytest
+
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    with pytest.raises(ValueError):
+        NTNDAViewerWidget("DEV:", num_rois=-1)
+
+
+def test_widget_colormap_defaults_to_grayscale(mocker: MockerFixture, qapp) -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    widget = NTNDAViewerWidget("DEV:")
+    assert widget._selected_colormap == "Grayscale"
+
+    widget._current_image = np.zeros((4, 4), dtype=np.uint8)
+    widget._on_colormap_changed("JET")
+    widget._image_item.setLookupTable.assert_called_with(widget._jet_lut)
+
+
+def test_widget_colormap_ignored_for_color_image(
+    mocker: MockerFixture, qapp, caplog
+) -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+    color_image = np.zeros((4, 4, 3), dtype=np.uint8)
+
+    widget = NTNDAViewerWidget("DEV:")
+    widget._current_image = color_image
+    with caplog.at_level("WARNING"):
+        widget._apply_colormap()
+    widget._image_item.setLookupTable.assert_called_with(None)
+    assert "Ignoring colormap" not in caplog.text
+
+    widget = NTNDAViewerWidget("DEV:", colormap="JET")
+    widget._current_image = color_image
+    with caplog.at_level("WARNING"):
+        widget._apply_colormap()
+        widget._apply_colormap()
+    widget._image_item.setLookupTable.assert_called_with(None)
+    assert caplog.text.count("Ignoring colormap") == 1
 
 
 def test_widget_dtype_min_max(mocker: MockerFixture, qapp) -> None:
@@ -157,7 +227,7 @@ def test_widget_dtype_min_max(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
 
     # Test uint8
     min_val, max_val = widget._dtype_min_max(np.dtype(np.uint8))
@@ -178,7 +248,7 @@ def test_widget_build_jet_lut(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
 
     lut = widget._build_jet_lut(256)
     assert isinstance(lut, np.ndarray)
@@ -196,7 +266,7 @@ def test_widget_on_show_roi_labels_toggled(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
 
     # Initially false
     assert widget._show_roi_labels is False
@@ -218,7 +288,7 @@ def test_widget_set_active_roi(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
 
     widget._set_active_roi(0)
     assert widget._active_roi_idx == 0
@@ -235,7 +305,7 @@ def test_widget_source_to_display_roi(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
 
     # Source coordinates: 100x100 image at (10, 20) with size 50x60
     x0, y0, sx, sy = widget._source_to_display_roi(10, 20, 50, 60, 480, 640)
@@ -255,7 +325,7 @@ def test_widget_display_to_source_roi(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
 
     # Display coordinates: 100x100 display at (10, 20) with size 50x60
     x0, y0, sx, sy = widget._display_to_source_roi(10, 20, 50, 60, 480, 640)
@@ -275,7 +345,7 @@ def test_widget_on_colormap_changed(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
     widget._current_image = np.random.randint(0, 256, (100, 100), dtype=np.uint8)
 
     # Change to Grayscale
@@ -295,7 +365,7 @@ def test_widget_on_profile_lines_toggled(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
 
     # Initially False
     assert widget._show_profile_lines is False
@@ -317,7 +387,7 @@ def test_widget_set_roi_mode(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
 
     # Test enabling ROI mode
     widget._set_roi_mode_enabled(True)
@@ -336,7 +406,7 @@ def test_widget_update_dtype_defaults(mocker: MockerFixture, qapp) -> None:
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
     mocker.patch("ntnda_qt_viewer._widget.pg")
 
-    widget = NTNDAViewerWidget(qapp)
+    widget = NTNDAViewerWidget("DEV:")
 
     # Set uint8 dtype
     widget._update_dtype_defaults(np.dtype(np.uint8))

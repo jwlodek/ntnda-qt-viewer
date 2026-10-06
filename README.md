@@ -45,12 +45,12 @@ pip install "ntnda-qt-viewer[codecs]"
 
 ## Usage
 
-Launch from the command line with an optional top-level prefix:
+Launch from the command line with a top-level prefix:
 
 ```bash
-ntnda-qt-viewer
+ntnda-qt-viewer DEV:XSPD1:
 ntnda-qt-viewer DEV:XSPD1: --pva-suffix Pva1:
-ntnda-qt-viewer DEV:XSPD1: --roi-suffixes ROI1: ROI2: ROI3: ROI4:
+ntnda-qt-viewer DEV:XSPD1: --num-rois 4 --roi-suffix-pattern "ROI{}:"
 ```
 
 Image PV is formed as `<prefix><pva-suffix>Image`.
@@ -65,7 +65,8 @@ from ntnda_qt_viewer import NTNDAViewerWidget
 widget = NTNDAViewerWidget(
     prefix="DEV:XSPD1:",
     pva_suffix="Pva1:",
-    roi_suffixes=["ROI1:", "ROI2:", "ROI3:", "ROI4:"],
+    num_rois=4,
+    roi_suffix_pattern="ROI{}:",
 )
 widget.show()
 ```

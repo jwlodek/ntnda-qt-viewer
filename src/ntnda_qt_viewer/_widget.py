@@ -14,7 +14,6 @@ from p4p.client.thread import Context
 from qtpy.QtCore import QPoint, QRect, QSize, Qt, QTimer
 from qtpy.QtGui import QAction, QActionGroup, QColor
 from qtpy.QtWidgets import (
-    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -43,7 +42,6 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_FPS = 30
 _DEFAULT_PVA_SUFFIX = "Pva1:"
-_DEFAULT_ROI_SUFFIXES = ["ROI1:", "ROI2:", "ROI3:", "ROI4:"]
 _COLORMAPS = ("Grayscale", "JET")
 _V_PROFILE_POSITIONS = ("left", "right")
 _H_PROFILE_POSITIONS = ("top", "bottom")
@@ -246,26 +244,24 @@ class NTNDAViewerWidget(QWidget):
 
     def __init__(
         self,
-        prefix: str = "13SIM1:",
+        prefix: str,
         pva_suffix: str = _DEFAULT_PVA_SUFFIX,
-        roi_suffixes: list[str] | None = None,
         auto_resize_on_first_image: bool = False,
         parent: QWidget | None = None,
         *,
-        colormap: str = "Grayscale",
+        colormap: str | None = None,
         show_profile_lines: bool = False,
         show_roi_controls: bool = True,
         v_profile_position: str = "left",
         h_profile_position: str = "bottom",
         use_opengl: bool = False,
-        ntndarray: bool = True,
+        raw_waveform: bool = False,
         image_shape: tuple[int, int] | None = None,
         color: bool = False,
+        num_rois: int = 4,
+        roi_suffix_pattern: str = "ROI{}:",
     ) -> None:
-        # Backward compatibility with callers that passed QApplication first.
-        if isinstance(prefix, QApplication):
-            prefix = "13SIM1:"
-        if colormap not in _COLORMAPS:
+        if colormap is not None and colormap not in _COLORMAPS:
             raise ValueError(f"colormap must be one of {_COLORMAPS}, got {colormap!r}")
         if v_profile_position not in _V_PROFILE_POSITIONS:
             raise ValueError(
@@ -277,10 +273,10 @@ class NTNDAViewerWidget(QWidget):
                 f"h_profile_position must be one of {_H_PROFILE_POSITIONS}, "
                 f"got {h_profile_position!r}"
             )
-        if ntndarray:
+        if not raw_waveform:
             if image_shape is not None or color:
                 raise ValueError(
-                    "image_shape and color only apply when ntndarray=False"
+                    "image_shape and color only apply when raw_waveform=True"
                 )
         else:
             if (
@@ -290,22 +286,25 @@ class NTNDAViewerWidget(QWidget):
             ):
                 raise ValueError(
                     "image_shape (rows, cols) of positive ints is required when "
-                    f"ntndarray=False, got {image_shape!r}"
+                    f"raw_waveform=True, got {image_shape!r}"
                 )
             image_shape = (int(image_shape[0]), int(image_shape[1]))
+        if num_rois < 0:
+            raise ValueError(f"num_rois must be >= 0, got {num_rois}")
+        roi_suffixes = [roi_suffix_pattern.format(i) for i in range(1, num_rois + 1)]
 
         super().__init__(parent)
         self.setWindowTitle("ntnda-qt-viewer")
 
         self._prefix = prefix
         self._pva_suffix = pva_suffix
-        # Non-NTNDArray mode: prefix is the full array PV; ROIs remain <prefix><roi>.
-        self._ntndarray = ntndarray
-        self._roi_suffixes = roi_suffixes or _DEFAULT_ROI_SUFFIXES.copy()
+        # Raw waveform mode: prefix is the full array PV; ROIs remain <prefix><roi>.
+        self._raw_waveform = raw_waveform
+        self._roi_suffixes = roi_suffixes
         self._auto_resize_on_first_image = auto_resize_on_first_image
         self._provider = NTNDAProvider(
             self._build_image_channel(),
-            ntndarray=ntndarray,
+            raw_waveform=raw_waveform,
             image_shape=image_shape,
             color=color,
         )
@@ -319,8 +318,11 @@ class NTNDAViewerWidget(QWidget):
         self._roi_set_buttons: list[QPushButton] = []
         self._active_roi_idx = 0
         self._set_roi_mode = False
-        self._selected_colormap = colormap
+        self._selected_colormap = colormap or "Grayscale"
         self._current_colormap = self._selected_colormap
+        # Colormaps don't apply to color images; warn once if one was requested.
+        self._colormap_requested = colormap is not None
+        self._warned_colormap_ignored = False
         self._show_profile_lines = show_profile_lines
         self._show_roi_controls = show_roi_controls
         self._use_opengl = use_opengl
@@ -372,7 +374,7 @@ class NTNDAViewerWidget(QWidget):
         self._indicator = _StatusIndicator()
         controls.addWidget(self._indicator)
 
-        controls.addWidget(QLabel("Prefix:" if self._ntndarray else "PV:"))
+        controls.addWidget(QLabel("PV:" if self._raw_waveform else "Prefix:"))
         self._prefix_edit = QLineEdit(self._prefix)
         controls.addWidget(self._prefix_edit)
 
@@ -501,7 +503,7 @@ class NTNDAViewerWidget(QWidget):
         self._pva_suffix_action = menu.addAction("")
         self._pva_suffix_action.triggered.connect(self._open_pva_suffix_dialog)
         self._refresh_pva_suffix_action_text()
-        self._pva_suffix_action.setVisible(self._ntndarray)
+        self._pva_suffix_action.setVisible(not self._raw_waveform)
 
         self._max_framerate_action = menu.addAction("")
         self._max_framerate_action.triggered.connect(self._open_max_framerate_dialog)
@@ -893,7 +895,7 @@ class NTNDAViewerWidget(QWidget):
             self._set_max_framerate(fps)
 
     def _build_image_channel(self) -> str:
-        if not self._ntndarray:
+        if self._raw_waveform:
             return self._prefix
         if str(self._pva_suffix).endswith("Image"):
             return f"{self._prefix}{self._pva_suffix}"
@@ -926,7 +928,14 @@ class NTNDAViewerWidget(QWidget):
         return (lut * 255).astype(np.uint8)
 
     def _apply_colormap(self) -> None:
-        if self._selected_colormap == "JET":
+        if self._current_image is not None and self._current_image.ndim == 3:
+            if self._colormap_requested and not self._warned_colormap_ignored:
+                logger.warning(
+                    "Ignoring colormap %r for color image", self._selected_colormap
+                )
+                self._warned_colormap_ignored = True
+            self._image_item.setLookupTable(None)  # type: ignore
+        elif self._selected_colormap == "JET":
             self._image_item.setLookupTable(self._jet_lut)
         else:
             self._image_item.setLookupTable(None)  # type: ignore
@@ -1406,7 +1415,7 @@ class NTNDAViewerWidget(QWidget):
     def _on_start(self) -> None:
         prefix = self._prefix_edit.text().strip()
         pva_suffix = self._pva_suffix.strip()
-        if not prefix or (self._ntndarray and not pva_suffix):
+        if not prefix or (not self._raw_waveform and not pva_suffix):
             return
         self._prefix = prefix
         self._pva_suffix = pva_suffix

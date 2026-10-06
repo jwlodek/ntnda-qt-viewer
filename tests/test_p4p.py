@@ -173,7 +173,7 @@ def test_ntnda_provider_extract_image_fallback(qapp) -> None:
 def test_ntnda_provider_raw_array_reshapes_flat_array(qapp) -> None:
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
-    provider = NTNDAProvider("DEV:Array", ntndarray=False, image_shape=(2, 3))
+    provider = NTNDAProvider("DEV:Array", raw_waveform=True, image_shape=(2, 3))
     result = provider._extract_image({"value": np.arange(8, dtype=np.uint16)})
 
     assert result.shape == (2, 3)
@@ -185,7 +185,7 @@ def test_ntnda_provider_raw_array_color(qapp) -> None:
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
     provider = NTNDAProvider(
-        "DEV:Array", ntndarray=False, image_shape=(2, 3), color=True
+        "DEV:Array", raw_waveform=True, image_shape=(2, 3), color=True
     )
     result = provider._extract_image(np.arange(18, dtype=np.uint8))
 
@@ -196,7 +196,7 @@ def test_ntnda_provider_raw_array_color(qapp) -> None:
 def test_ntnda_provider_raw_array_too_small_returns_empty(qapp) -> None:
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
-    provider = NTNDAProvider("DEV:Array", ntndarray=False, image_shape=(4, 4))
+    provider = NTNDAProvider("DEV:Array", raw_waveform=True, image_shape=(4, 4))
     result = provider._extract_image(np.arange(5))
 
     assert result.size == 0
@@ -206,4 +206,4 @@ def test_ntnda_provider_raw_array_requires_shape() -> None:
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
     with pytest.raises(ValueError):
-        NTNDAProvider("DEV:Array", ntndarray=False)
+        NTNDAProvider("DEV:Array", raw_waveform=True)
