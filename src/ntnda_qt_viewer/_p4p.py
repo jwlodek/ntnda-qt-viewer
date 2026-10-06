@@ -44,9 +44,22 @@ class NTNDAProvider(QObject):
     new_frame = Signal(object)
     disconnected = Signal()
 
-    def __init__(self, channel_name: str = "DEV:XSPD1:Pva1:Image") -> None:
+    def __init__(
+        self,
+        channel_name: str = "DEV:XSPD1:Pva1:Image",
+        *,
+        ntndarray: bool = True,
+        image_shape: tuple[int, int] | None = None,
+        color: bool = False,
+    ) -> None:
         super().__init__()
+        if not ntndarray and image_shape is None:
+            raise ValueError("image_shape is required when ntndarray=False")
         self._channel_name = channel_name
+        self._ntndarray = ntndarray
+        # Only used for non-NTNDArray PVs, whose payload is a flat array.
+        self._image_shape = image_shape
+        self._color = color
         self._ctxt: Context | None = None
         self._subscription = None
 
@@ -109,6 +122,36 @@ class NTNDAProvider(QObject):
             )
 
     def _extract_image(self, value: object) -> np.ndarray:
+        """Extract image data from an NTNDArray or a flat array PV."""
+        if self._ntndarray or self._image_shape is None:
+            return self._extract_ntndarray_image(value)
+        return self._extract_raw_array_image(value, self._image_shape)
+
+    def _extract_raw_array_image(
+        self, value: object, shape: tuple[int, int]
+    ) -> np.ndarray:
+        raw = getattr(value, "raw", value)
+        if self._has_key(raw, "value"):
+            data = np.asarray(self._raw_get(raw, "value", []))
+        else:
+            data = np.asarray(value)
+
+        rows, cols = shape
+        target = (rows, cols, 3) if self._color else (rows, cols)
+        count = int(np.prod(target))
+        flat = data.reshape(-1)
+        if flat.size < count:
+            logger.warning(
+                "Array from %s has %d elements, expected at least %d for shape %s",
+                self._channel_name,
+                flat.size,
+                count,
+                target,
+            )
+            return np.empty(0, dtype=data.dtype)
+        return np.array(flat[:count].reshape(target), copy=True)
+
+    def _extract_ntndarray_image(self, value: object) -> np.ndarray:
         """Extract uncompressed image data from an NTNDArray callback value."""
         raw = getattr(value, "raw", value)
 

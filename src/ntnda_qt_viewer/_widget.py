@@ -258,6 +258,9 @@ class NTNDAViewerWidget(QWidget):
         v_profile_position: str = "left",
         h_profile_position: str = "bottom",
         use_opengl: bool = False,
+        ntndarray: bool = True,
+        image_shape: tuple[int, int] | None = None,
+        color: bool = False,
     ) -> None:
         # Backward compatibility with callers that passed QApplication first.
         if isinstance(prefix, QApplication):
@@ -274,15 +277,38 @@ class NTNDAViewerWidget(QWidget):
                 f"h_profile_position must be one of {_H_PROFILE_POSITIONS}, "
                 f"got {h_profile_position!r}"
             )
+        if ntndarray:
+            if image_shape is not None or color:
+                raise ValueError(
+                    "image_shape and color only apply when ntndarray=False"
+                )
+        else:
+            if (
+                image_shape is None
+                or len(image_shape) != 2
+                or any(int(n) <= 0 for n in image_shape)
+            ):
+                raise ValueError(
+                    "image_shape (rows, cols) of positive ints is required when "
+                    f"ntndarray=False, got {image_shape!r}"
+                )
+            image_shape = (int(image_shape[0]), int(image_shape[1]))
 
         super().__init__(parent)
         self.setWindowTitle("ntnda-qt-viewer")
 
         self._prefix = prefix
         self._pva_suffix = pva_suffix
+        # Non-NTNDArray mode: prefix is the full array PV; ROIs remain <prefix><roi>.
+        self._ntndarray = ntndarray
         self._roi_suffixes = roi_suffixes or _DEFAULT_ROI_SUFFIXES.copy()
         self._auto_resize_on_first_image = auto_resize_on_first_image
-        self._provider = NTNDAProvider(self._build_image_channel())
+        self._provider = NTNDAProvider(
+            self._build_image_channel(),
+            ntndarray=ntndarray,
+            image_shape=image_shape,
+            color=color,
+        )
         self._current_image: np.ndarray | None = None
         self._pending_image: np.ndarray | None = None
         self._connected = False
@@ -346,7 +372,7 @@ class NTNDAViewerWidget(QWidget):
         self._indicator = _StatusIndicator()
         controls.addWidget(self._indicator)
 
-        controls.addWidget(QLabel("Prefix:"))
+        controls.addWidget(QLabel("Prefix:" if self._ntndarray else "PV:"))
         self._prefix_edit = QLineEdit(self._prefix)
         controls.addWidget(self._prefix_edit)
 
@@ -475,6 +501,7 @@ class NTNDAViewerWidget(QWidget):
         self._pva_suffix_action = menu.addAction("")
         self._pva_suffix_action.triggered.connect(self._open_pva_suffix_dialog)
         self._refresh_pva_suffix_action_text()
+        self._pva_suffix_action.setVisible(self._ntndarray)
 
         self._max_framerate_action = menu.addAction("")
         self._max_framerate_action.triggered.connect(self._open_max_framerate_dialog)
@@ -866,6 +893,8 @@ class NTNDAViewerWidget(QWidget):
             self._set_max_framerate(fps)
 
     def _build_image_channel(self) -> str:
+        if not self._ntndarray:
+            return self._prefix
         if str(self._pva_suffix).endswith("Image"):
             return f"{self._prefix}{self._pva_suffix}"
         return f"{self._prefix}{self._pva_suffix}Image"
@@ -1355,16 +1384,20 @@ class NTNDAViewerWidget(QWidget):
         if self._current_image is None:
             return
         img = self._current_image
-        if img.ndim == 3:
-            img = img[..., 0]
-        rows, cols = img.shape
+        rows, cols = img.shape[:2]
 
         row = np.clip(self._cross_row, 0, rows - 1)
         col = np.clip(self._cross_col, 0, cols - 1)
 
-        self._h_profile_curve.setData(np.arange(cols), img[row, :])
+        h_profile = img[row, :]
+        v_profile = img[:, col]
+        if img.ndim == 3:
+            h_profile = h_profile.mean(axis=-1)
+            v_profile = v_profile.mean(axis=-1)
 
-        self._v_profile_curve.setData(img[:, col], np.arange(rows))
+        self._h_profile_curve.setData(np.arange(cols), h_profile)
+
+        self._v_profile_curve.setData(v_profile, np.arange(rows))
 
     # ------------------------------------------------------------------
     # Button handlers
@@ -1373,7 +1406,7 @@ class NTNDAViewerWidget(QWidget):
     def _on_start(self) -> None:
         prefix = self._prefix_edit.text().strip()
         pva_suffix = self._pva_suffix.strip()
-        if not prefix or not pva_suffix:
+        if not prefix or (self._ntndarray and not pva_suffix):
             return
         self._prefix = prefix
         self._pva_suffix = pva_suffix

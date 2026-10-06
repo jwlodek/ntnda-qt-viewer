@@ -116,6 +116,39 @@ def test_widget_build_image_channel(mocker: MockerFixture, qapp) -> None:
     assert channel == "DEV:XSPD1:Pva1:Image"
 
 
+def test_widget_raw_array_uses_prefix_as_pv(mocker: MockerFixture, qapp) -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    provider_cls = mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    widget = NTNDAViewerWidget(
+        "DEV:Array:", ntndarray=False, image_shape=(480, 640), color=True
+    )
+
+    assert widget._build_image_channel() == "DEV:Array:"
+    provider_cls.assert_called_once_with(
+        "DEV:Array:", ntndarray=False, image_shape=(480, 640), color=True
+    )
+    assert widget._roi_field_channel("ROI1:", "MinX") == "DEV:Array:ROI1:MinX"
+
+
+def test_widget_invalid_image_shape_options(mocker: MockerFixture, qapp) -> None:
+    import pytest
+
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    with pytest.raises(ValueError):
+        NTNDAViewerWidget("DEV:Array:", ntndarray=False)
+    with pytest.raises(ValueError):
+        NTNDAViewerWidget("DEV:Array:", ntndarray=False, image_shape=(0, 640))
+    with pytest.raises(ValueError):
+        NTNDAViewerWidget("DEV:", image_shape=(480, 640))
+
+
 def test_widget_dtype_min_max(mocker: MockerFixture, qapp) -> None:
     """Test dtype min/max calculation."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
