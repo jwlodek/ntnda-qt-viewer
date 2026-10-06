@@ -45,6 +45,8 @@ _DEFAULT_MAX_FPS = 30
 _DEFAULT_PVA_SUFFIX = "Pva1:"
 _DEFAULT_ROI_SUFFIXES = ["ROI1:", "ROI2:", "ROI3:", "ROI4:"]
 _COLORMAPS = ("Grayscale", "JET")
+_V_PROFILE_POSITIONS = ("left", "right")
+_H_PROFILE_POSITIONS = ("top", "bottom")
 
 # One-line orientation control.
 # Change this to another key in _ORIENTATION_PRESETS as needed.
@@ -249,10 +251,28 @@ class NTNDAViewerWidget(QWidget):
         roi_suffixes: list[str] | None = None,
         auto_resize_on_first_image: bool = False,
         parent: QWidget | None = None,
+        *,
+        colormap: str = "Grayscale",
+        show_profile_lines: bool = False,
+        show_roi_controls: bool = True,
+        v_profile_position: str = "left",
+        h_profile_position: str = "bottom",
     ) -> None:
         # Backward compatibility with callers that passed QApplication first.
         if isinstance(prefix, QApplication):
             prefix = "13SIM1:"
+        if colormap not in _COLORMAPS:
+            raise ValueError(f"colormap must be one of {_COLORMAPS}, got {colormap!r}")
+        if v_profile_position not in _V_PROFILE_POSITIONS:
+            raise ValueError(
+                f"v_profile_position must be one of {_V_PROFILE_POSITIONS}, "
+                f"got {v_profile_position!r}"
+            )
+        if h_profile_position not in _H_PROFILE_POSITIONS:
+            raise ValueError(
+                f"h_profile_position must be one of {_H_PROFILE_POSITIONS}, "
+                f"got {h_profile_position!r}"
+            )
 
         super().__init__(parent)
         self.setWindowTitle("ntnda-qt-viewer")
@@ -272,9 +292,12 @@ class NTNDAViewerWidget(QWidget):
         self._roi_set_buttons: list[QPushButton] = []
         self._active_roi_idx = 0
         self._set_roi_mode = False
-        self._selected_colormap = "Grayscale"
+        self._selected_colormap = colormap
         self._current_colormap = self._selected_colormap
-        self._show_profile_lines = False
+        self._show_profile_lines = show_profile_lines
+        self._show_roi_controls = show_roi_controls
+        self._v_profile_position = v_profile_position
+        self._h_profile_position = h_profile_position
         self._show_roi_labels = False
         self._jet_lut = self._build_jet_lut()
         self._scale_mode = "auto"  # "auto" or "manual"
@@ -358,17 +381,19 @@ class NTNDAViewerWidget(QWidget):
         )
         self._rebuild_roi_controls()
         root.addWidget(self._roi_controls_widget)
+        self._roi_controls_widget.setVisible(self._show_roi_controls)
 
-        # Row 0, Col 0: vertical profile plot (left)
-        self._v_profile_plot = self._glw.addPlot(row=0, col=0)
+        # Vertical profile plot; placed in the layout by _apply_profile_layout()
+        self._v_profile_plot = pg.PlotItem()
         self._v_profile_plot.setMouseEnabled(x=False, y=False)
         self._v_profile_plot.setMenuEnabled(False)
         self._v_profile_plot.hideAxis("bottom")
+        self._v_profile_plot.invertY(bool(self._orientation["invert_y"]))
         self._v_profile_curve = self._v_profile_plot.plot(pen="c")
 
-        # Row 0, Col 1: image view
+        # Image view sits in the centre of a 3x3 grid (row 1, col 1)
         vb = _ImageViewBox()
-        self._image_plot = self._glw.addPlot(row=0, col=1, viewBox=vb)
+        self._image_plot = self._glw.addPlot(row=1, col=1, viewBox=vb)
         self._image_plot.setMouseEnabled(x=True, y=True)
         self._image_plot.setMenuEnabled(False)
         self._image_plot.hideAxis("left")
@@ -404,21 +429,18 @@ class NTNDAViewerWidget(QWidget):
             line.setVisible(self._show_profile_lines)
             self._image_plot.addItem(line)
 
-        # Row 1, Col 1: horizontal profile plot (bottom, under image only)
-        self._h_profile_plot = self._glw.addPlot(row=1, col=1)
+        # Horizontal profile plot; placed in the layout by _apply_profile_layout()
+        self._h_profile_plot = pg.PlotItem()
         self._h_profile_plot.setMouseEnabled(x=False, y=False)
         self._h_profile_plot.setMenuEnabled(False)
         self._h_profile_plot.hideAxis("left")
+        self._h_profile_plot.invertX(bool(self._orientation["invert_x"]))
         self._h_profile_curve = self._h_profile_plot.plot(pen="c")
 
         # Link horizontal profile X axis to image X axis
         self._h_profile_plot.setXLink(self._image_plot)
 
-        # Sizing: image row/col gets most space
-        self._glw.ci.layout.setRowStretchFactor(0, 5)
-        self._glw.ci.layout.setRowStretchFactor(1, 1)
-        self._glw.ci.layout.setColumnStretchFactor(0, 1)
-        self._glw.ci.layout.setColumnStretchFactor(1, 5)
+        self._apply_profile_layout()
 
         # --- status bar ---
         self._status_label = QLabel("Idle")
@@ -471,6 +493,34 @@ class NTNDAViewerWidget(QWidget):
         self._show_roi_labels_action.setChecked(self._show_roi_labels)
         self._show_roi_labels_action.toggled.connect(self._on_show_roi_labels_toggled)
 
+        v_pos_menu = menu.addMenu("Vertical Profile Position")
+        self._v_profile_position_actions: dict[str, QAction] = {}
+        v_pos_group = QActionGroup(self)
+        v_pos_group.setExclusive(True)
+        for pos in _V_PROFILE_POSITIONS:
+            action = v_pos_menu.addAction(pos.capitalize())
+            action.setCheckable(True)
+            action.setChecked(pos == self._v_profile_position)
+            v_pos_group.addAction(action)
+            action.triggered.connect(
+                lambda checked, p=pos: self._set_v_profile_position(p)
+            )
+            self._v_profile_position_actions[pos] = action
+
+        h_pos_menu = menu.addMenu("Horizontal Profile Position")
+        self._h_profile_position_actions: dict[str, QAction] = {}
+        h_pos_group = QActionGroup(self)
+        h_pos_group.setExclusive(True)
+        for pos in _H_PROFILE_POSITIONS:
+            action = h_pos_menu.addAction(pos.capitalize())
+            action.setCheckable(True)
+            action.setChecked(pos == self._h_profile_position)
+            h_pos_group.addAction(action)
+            action.triggered.connect(
+                lambda checked, p=pos: self._set_h_profile_position(p)
+            )
+            self._h_profile_position_actions[pos] = action
+
         menu.addSeparator()
         colormap_menu = menu.addMenu("Colormap")
         self._colormap_actions: dict[str, QAction] = {}
@@ -487,6 +537,46 @@ class NTNDAViewerWidget(QWidget):
             self._colormap_actions[name] = action
 
         self._settings_btn.setMenu(menu)
+
+    def _set_v_profile_position(self, position: str) -> None:
+        if position not in _V_PROFILE_POSITIONS:
+            raise ValueError(f"Invalid vertical profile position: {position!r}")
+        self._v_profile_position = position
+        self._v_profile_position_actions[position].setChecked(True)
+        self._apply_profile_layout()
+
+    def _set_h_profile_position(self, position: str) -> None:
+        if position not in _H_PROFILE_POSITIONS:
+            raise ValueError(f"Invalid horizontal profile position: {position!r}")
+        self._h_profile_position = position
+        self._h_profile_position_actions[position].setChecked(True)
+        self._apply_profile_layout()
+
+    def _apply_profile_layout(self) -> None:
+        ci = self._glw.ci
+        for plot in (self._v_profile_plot, self._h_profile_plot):
+            if plot in ci.items:
+                ci.removeItem(plot)
+
+        v_col = 0 if self._v_profile_position == "left" else 2
+        h_row = 0 if self._h_profile_position == "top" else 2
+        ci.addItem(self._v_profile_plot, row=1, col=v_col)
+        ci.addItem(self._h_profile_plot, row=h_row, col=1)
+
+        self._v_profile_plot.showAxis("left", v_col == 0)
+        self._v_profile_plot.showAxis("right", v_col == 2)
+        self._h_profile_plot.showAxis("top", h_row == 0)
+        self._h_profile_plot.showAxis("bottom", h_row == 2)
+
+        # Image row/col gets most space; the unused outer row/col collapses.
+        layout = ci.layout
+        for i in range(3):
+            layout.setRowStretchFactor(i, 0)
+            layout.setColumnStretchFactor(i, 0)
+        layout.setRowStretchFactor(1, 5)
+        layout.setRowStretchFactor(h_row, 1)
+        layout.setColumnStretchFactor(1, 5)
+        layout.setColumnStretchFactor(v_col, 1)
 
     def _refresh_pva_suffix_action_text(self) -> None:
         self._pva_suffix_action.setText(f"PVA Suffix... ({self._pva_suffix})")
@@ -1370,7 +1460,6 @@ class NTNDAViewerWidget(QWidget):
             )
             self._h_profile_plot.setLimits(xMin=0, xMax=cols)
             self._v_profile_plot.setLimits(yMin=0, yMax=rows)
-            self._v_profile_plot.invertY(True)
 
             if self._auto_resize_on_first_image:
                 # Profile plots use 1/6 of each axis (stretch 5:1), so scale up
