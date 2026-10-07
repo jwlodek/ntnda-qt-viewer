@@ -250,6 +250,7 @@ class NTNDAViewerWidget(QWidget):
         parent: QWidget | None = None,
         *,
         colormap: str | None = None,
+        log_scale: bool = False,
         show_profile_lines: bool = False,
         show_roi_controls: bool = True,
         v_profile_position: str = "left",
@@ -258,6 +259,7 @@ class NTNDAViewerWidget(QWidget):
         raw_waveform: bool = False,
         image_shape: tuple[int, int] | None = None,
         color: bool = False,
+        use_ca: bool = False,
         num_rois: int = 4,
         roi_suffix_pattern: str = "ROI{}:",
     ) -> None:
@@ -274,9 +276,9 @@ class NTNDAViewerWidget(QWidget):
                 f"got {h_profile_position!r}"
             )
         if not raw_waveform:
-            if image_shape is not None or color:
+            if image_shape is not None or color or use_ca:
                 raise ValueError(
-                    "image_shape and color only apply when raw_waveform=True"
+                    "image_shape, color and use_ca only apply when raw_waveform=True"
                 )
         else:
             if (
@@ -307,6 +309,7 @@ class NTNDAViewerWidget(QWidget):
             raw_waveform=raw_waveform,
             image_shape=image_shape,
             color=color,
+            use_ca=use_ca,
         )
         self._current_image: np.ndarray | None = None
         self._pending_image: np.ndarray | None = None
@@ -332,7 +335,7 @@ class NTNDAViewerWidget(QWidget):
         self._jet_lut = self._build_jet_lut()
         self._scale_mode = "auto"  # "auto" or "manual"
         self._manual_scaling_enabled = False
-        self._log_scale = False
+        self._log_scale = log_scale
         self._manual_min: float | None = None
         self._manual_max: float | None = None
         self._max_fps = _DEFAULT_MAX_FPS

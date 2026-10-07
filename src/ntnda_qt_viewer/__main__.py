@@ -52,11 +52,21 @@ def main() -> None:
         action="store_true",
         help="Flat array is interleaved RGB (--raw-waveform only)",
     )
+    parser.add_argument(
+        "--ca",
+        action="store_true",
+        help="Connect to the array PV over Channel Access (--raw-waveform only)",
+    )
+    parser.add_argument(
+        "--log-scale",
+        action="store_true",
+        help="Start with log intensity scaling enabled",
+    )
     args = parser.parse_args()
     if args.raw_waveform and args.image_shape is None:
         parser.error("--image-shape is required with --raw-waveform")
-    if not args.raw_waveform and (args.image_shape or args.color):
-        parser.error("--image-shape and --color require --raw-waveform")
+    if not args.raw_waveform and (args.image_shape or args.color or args.ca):
+        parser.error("--image-shape, --color and --ca require --raw-waveform")
 
     app = QApplication.instance() or QApplication(sys.argv)
     widget = NTNDAViewerWidget(
@@ -68,6 +78,8 @@ def main() -> None:
         raw_waveform=args.raw_waveform,
         image_shape=tuple(args.image_shape) if args.image_shape else None,
         color=args.color,
+        use_ca=args.ca,
+        log_scale=args.log_scale,
     )
     widget.resize(1024, 768)
     widget.show()

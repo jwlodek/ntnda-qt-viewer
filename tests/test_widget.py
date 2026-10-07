@@ -128,7 +128,11 @@ def test_widget_raw_array_uses_prefix_as_pv(mocker: MockerFixture, qapp) -> None
 
     assert widget._build_image_channel() == "DEV:Array:"
     provider_cls.assert_called_once_with(
-        "DEV:Array:", raw_waveform=True, image_shape=(480, 640), color=True
+        "DEV:Array:",
+        raw_waveform=True,
+        image_shape=(480, 640),
+        color=True,
+        use_ca=False,
     )
     assert widget._roi_field_channel("ROI1:", "MinX") == "DEV:Array:ROI1:MinX"
 
@@ -147,6 +151,8 @@ def test_widget_invalid_image_shape_options(mocker: MockerFixture, qapp) -> None
         NTNDAViewerWidget("DEV:Array:", raw_waveform=True, image_shape=(0, 640))
     with pytest.raises(ValueError):
         NTNDAViewerWidget("DEV:", image_shape=(480, 640))
+    with pytest.raises(ValueError):
+        NTNDAViewerWidget("DEV:", use_ca=True)
 
 
 def test_widget_num_rois_with_pattern(mocker: MockerFixture, qapp) -> None:
@@ -192,6 +198,20 @@ def test_widget_colormap_defaults_to_grayscale(mocker: MockerFixture, qapp) -> N
     widget._current_image = np.zeros((4, 4), dtype=np.uint8)
     widget._on_colormap_changed("JET")
     widget._image_item.setLookupTable.assert_called_with(widget._jet_lut)
+
+
+def test_widget_log_scale_option(mocker: MockerFixture, qapp) -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    assert NTNDAViewerWidget("DEV:")._log_scale is False
+    widget = NTNDAViewerWidget("DEV:", log_scale=True)
+    assert widget._log_scale is True
+    np.testing.assert_allclose(
+        widget._transform_for_scaling(np.array([0.0, np.e - 1])), [0.0, 1.0]
+    )
 
 
 def test_widget_colormap_ignored_for_color_image(

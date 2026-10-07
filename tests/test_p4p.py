@@ -207,3 +207,51 @@ def test_ntnda_provider_raw_array_requires_shape() -> None:
 
     with pytest.raises(ValueError):
         NTNDAProvider("DEV:Array", raw_waveform=True)
+
+
+def test_ntnda_provider_ca_requires_raw_waveform() -> None:
+    from ntnda_qt_viewer._p4p import NTNDAProvider
+
+    with pytest.raises(ValueError):
+        NTNDAProvider("DEV:Array", use_ca=True)
+
+
+def test_ntnda_provider_ca_start_stop(mocker: MockerFixture, qapp) -> None:
+    from ntnda_qt_viewer._p4p import NTNDAProvider
+
+    subscription = mocker.MagicMock()
+    camonitor = mocker.patch(
+        "ntnda_qt_viewer._p4p.camonitor", return_value=subscription
+    )
+    p4p_context = mocker.patch("ntnda_qt_viewer._p4p.Context")
+
+    provider = NTNDAProvider(
+        "DEV:Array", raw_waveform=True, image_shape=(2, 3), use_ca=True
+    )
+    provider.start()
+
+    assert provider._subscription is subscription
+    camonitor.assert_called_once_with(
+        "DEV:Array", provider._monitor_callback, notify_disconnect=True
+    )
+    p4p_context.assert_not_called()
+
+    provider.stop()
+
+    subscription.close.assert_called_once()
+    assert provider._subscription is None
+
+
+def test_ntnda_provider_ca_disconnect_emits_signal(mocker: MockerFixture, qapp) -> None:
+    from aioca import CANothing
+
+    from ntnda_qt_viewer._p4p import NTNDAProvider
+
+    provider = NTNDAProvider(
+        "DEV:Array", raw_waveform=True, image_shape=(2, 3), use_ca=True
+    )
+    handler = mocker.MagicMock()
+    provider.disconnected.connect(handler)
+    provider._monitor_callback(CANothing("DEV:Array"))
+
+    handler.assert_called_once()
