@@ -69,6 +69,27 @@ def main() -> None:
         action="store_true",
         help="Start with log intensity scaling enabled",
     )
+    parser.add_argument(
+        "--auto-scale",
+        choices=("percentile", "sigma", "minmax"),
+        default="percentile",
+        help="Auto scaling method (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--percentiles",
+        nargs=2,
+        type=float,
+        default=(0.1, 99.9),
+        metavar=("LOW", "HIGH"),
+        help="Clip percentiles for --auto-scale percentile (default: 0.1 99.9)",
+    )
+    parser.add_argument(
+        "--n-sigma",
+        type=float,
+        default=3.0,
+        help="N for --auto-scale sigma, median +/- N robust sigma "
+        "(default: %(default)s)",
+    )
     args = parser.parse_args()
     if args.raw_waveform and args.image_shape is None:
         parser.error("--image-shape is required with --raw-waveform")
@@ -78,20 +99,26 @@ def main() -> None:
         parser.error("--scale MIN must be less than MAX")
 
     app = QApplication.instance() or QApplication(sys.argv)
-    widget = NTNDAViewerWidget(
-        prefix=args.prefix,
-        pva_suffix=args.pva_suffix,
-        num_rois=args.num_rois,
-        roi_suffix_pattern=args.roi_suffix_pattern,
-        auto_resize_on_first_image=True,
-        raw_waveform=args.raw_waveform,
-        image_shape=tuple(args.image_shape) if args.image_shape else None,
-        color=args.color,
-        scale_min=args.scale[0] if args.scale else None,
-        scale_max=args.scale[1] if args.scale else None,
-        use_ca=args.ca,
-        log_scale=args.log_scale,
-    )
+    try:
+        widget = NTNDAViewerWidget(
+            prefix=args.prefix,
+            pva_suffix=args.pva_suffix,
+            num_rois=args.num_rois,
+            roi_suffix_pattern=args.roi_suffix_pattern,
+            auto_resize_on_first_image=True,
+            raw_waveform=args.raw_waveform,
+            image_shape=tuple(args.image_shape) if args.image_shape else None,
+            color=args.color,
+            scale_min=args.scale[0] if args.scale else None,
+            scale_max=args.scale[1] if args.scale else None,
+            use_ca=args.ca,
+            log_scale=args.log_scale,
+            auto_scale_method=args.auto_scale,
+            auto_scale_percentiles=tuple(args.percentiles),
+            auto_scale_n_sigma=args.n_sigma,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     widget.resize(1024, 768)
     widget.show()
     sys.exit(app.exec())
