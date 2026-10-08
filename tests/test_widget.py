@@ -417,3 +417,34 @@ def test_widget_update_dtype_defaults(mocker: MockerFixture, qapp) -> None:
     widget._update_dtype_defaults(np.dtype(np.float32))
     assert widget._manual_min < 0
     assert widget._manual_max > 0
+
+
+def test_widget_initial_scaling(mocker: MockerFixture, qapp) -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    widget = NTNDAViewerWidget("DEV:")
+    assert widget._scale_mode == "auto"
+    assert widget._log_scale is False
+
+    widget = NTNDAViewerWidget("DEV:", scale_min=10, scale_max=200, log_scale=True)
+    assert widget._scale_mode == "manual"
+    assert widget._log_scale is True
+    widget._update_dtype_defaults(np.dtype(np.uint16))
+    assert widget._manual_levels() == (np.log1p(10.0), np.log1p(200.0))
+
+
+def test_widget_initial_scaling_invalid(mocker: MockerFixture, qapp) -> None:
+    import pytest
+
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    with pytest.raises(ValueError):
+        NTNDAViewerWidget("DEV:", scale_min=10)
+    with pytest.raises(ValueError):
+        NTNDAViewerWidget("DEV:", scale_min=10, scale_max=10)

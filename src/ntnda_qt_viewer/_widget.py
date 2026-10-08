@@ -260,9 +260,20 @@ class NTNDAViewerWidget(QWidget):
         color: bool = False,
         num_rois: int = 4,
         roi_suffix_pattern: str = "ROI{}:",
+        scale_min: float | None = None,
+        scale_max: float | None = None,
+        log_scale: bool = False,
     ) -> None:
         if colormap is not None and colormap not in _COLORMAPS:
             raise ValueError(f"colormap must be one of {_COLORMAPS}, got {colormap!r}")
+        if (scale_min is None) != (scale_max is None):
+            raise ValueError("scale_min and scale_max must be passed together")
+        if scale_min is not None and scale_max is not None:
+            scale_min, scale_max = float(scale_min), float(scale_max)
+            if scale_min >= scale_max:
+                raise ValueError(
+                    f"scale_min must be less than scale_max, got {scale_min}, {scale_max}"
+                )
         if v_profile_position not in _V_PROFILE_POSITIONS:
             raise ValueError(
                 f"v_profile_position must be one of {_V_PROFILE_POSITIONS}, "
@@ -330,11 +341,13 @@ class NTNDAViewerWidget(QWidget):
         self._h_profile_position = h_profile_position
         self._show_roi_labels = False
         self._jet_lut = self._build_jet_lut()
-        self._scale_mode = "auto"  # "auto" or "manual"
+        self._scale_mode = "auto" if scale_min is None else "manual"
         self._manual_scaling_enabled = False
-        self._log_scale = False
-        self._manual_min: float | None = None
-        self._manual_max: float | None = None
+        self._log_scale = log_scale
+        self._manual_min: float | None = scale_min
+        self._manual_max: float | None = scale_max
+        # Keep init-provided limits instead of resetting them to the dtype range.
+        self._manual_range_from_init = scale_min is not None
         self._max_fps = _DEFAULT_MAX_FPS
         self._data_dtype: np.dtype | None = None
         self._fps_last_time = time.monotonic()
@@ -915,6 +928,8 @@ class NTNDAViewerWidget(QWidget):
         if self._data_dtype == dtype:
             return
         self._data_dtype = dtype
+        if self._manual_range_from_init:
+            return
         self._manual_min, self._manual_max = self._dtype_min_max(dtype)
 
     @staticmethod
