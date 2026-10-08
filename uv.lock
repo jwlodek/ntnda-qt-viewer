@@ -7,6 +7,19 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "aioca"
+version = "2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "epicscorelibs" },
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/56/fc/0d09d80af3bb7bedd474313daea7541914b157ae17f3bcebd10ac148432f/aioca-2.1.tar.gz", hash = "sha256:094b815fa26c0fec705ecaf9c1814883b3cf3b5ea973baeb669959661391b5bc", size = 233509, upload-time = "2026-05-06T16:28:57.802Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/51/89/da0f32b679b8769dd472eb2927308d328bf75c296629fd9f95135afacd0a/aioca-2.1-py3-none-any.whl", hash = "sha256:df0f062b81a4846d3e5705f0bfaf7bee9f876009302cf3b06ada93d6f5153b6f", size = 26480, upload-time = "2026-05-06T16:28:56.622Z" },
+]
+
+[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -855,6 +868,7 @@ wheels = [
 name = "ntnda-qt-viewer"
 source = { editable = "." }
 dependencies = [
+    { name = "aioca" },
     { name = "p4p" },
     { name = "pyqtgraph" },
     { name = "qtpy" },
@@ -892,6 +906,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aioca", specifier = ">=2.0" },
     { name = "blosc2", marker = "extra == 'codecs'" },
     { name = "imagecodecs", marker = "extra == 'codecs'" },
     { name = "lz4", marker = "extra == 'codecs'" },

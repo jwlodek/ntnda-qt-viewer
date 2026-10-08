@@ -53,6 +53,11 @@ def main() -> None:
         help="Flat array is interleaved RGB (--raw-waveform only)",
     )
     parser.add_argument(
+        "--ca",
+        action="store_true",
+        help="Connect to the array PV over Channel Access (--raw-waveform only)",
+    )
+    parser.add_argument(
         "--scale",
         nargs=2,
         type=float,
@@ -62,13 +67,13 @@ def main() -> None:
     parser.add_argument(
         "--log-scale",
         action="store_true",
-        help="Start with log scaling enabled",
+        help="Start with log intensity scaling enabled",
     )
     args = parser.parse_args()
     if args.raw_waveform and args.image_shape is None:
         parser.error("--image-shape is required with --raw-waveform")
-    if not args.raw_waveform and (args.image_shape or args.color):
-        parser.error("--image-shape and --color require --raw-waveform")
+    if not args.raw_waveform and (args.image_shape or args.color or args.ca):
+        parser.error("--image-shape, --color and --ca require --raw-waveform")
     if args.scale and args.scale[0] >= args.scale[1]:
         parser.error("--scale MIN must be less than MAX")
 
@@ -84,6 +89,7 @@ def main() -> None:
         color=args.color,
         scale_min=args.scale[0] if args.scale else None,
         scale_max=args.scale[1] if args.scale else None,
+        use_ca=args.ca,
         log_scale=args.log_scale,
     )
     widget.resize(1024, 768)

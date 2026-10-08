@@ -59,6 +59,7 @@ _ORIENTATION_PRESETS: dict[str, dict[str, str | bool]] = {
     "rotate180": {"transform": "rotate180", "invert_x": False, "invert_y": False},
 }
 
+
 @dataclass
 class _ROIModel:
     suffix: str
@@ -258,6 +259,7 @@ class NTNDAViewerWidget(QWidget):
         raw_waveform: bool = False,
         image_shape: tuple[int, int] | None = None,
         color: bool = False,
+        use_ca: bool = False,
         num_rois: int = 4,
         roi_suffix_pattern: str = "ROI{}:",
         scale_min: float | None = None,
@@ -272,7 +274,7 @@ class NTNDAViewerWidget(QWidget):
             scale_min, scale_max = float(scale_min), float(scale_max)
             if scale_min >= scale_max:
                 raise ValueError(
-                    f"scale_min must be less than scale_max, got {scale_min}, {scale_max}"
+                    f"scale_min {scale_min} must be less than scale_max {scale_max}"
                 )
         if v_profile_position not in _V_PROFILE_POSITIONS:
             raise ValueError(
@@ -285,9 +287,9 @@ class NTNDAViewerWidget(QWidget):
                 f"got {h_profile_position!r}"
             )
         if not raw_waveform:
-            if image_shape is not None or color:
+            if image_shape is not None or color or use_ca:
                 raise ValueError(
-                    "image_shape and color only apply when raw_waveform=True"
+                    "image_shape, color and use_ca only apply when raw_waveform=True"
                 )
         else:
             if (
@@ -318,6 +320,7 @@ class NTNDAViewerWidget(QWidget):
             raw_waveform=raw_waveform,
             image_shape=image_shape,
             color=color,
+            use_ca=use_ca,
         )
         self._current_image: np.ndarray | None = None
         self._pending_image: np.ndarray | None = None
@@ -347,7 +350,7 @@ class NTNDAViewerWidget(QWidget):
         self._manual_min: float | None = scale_min
         self._manual_max: float | None = scale_max
         # Keep init-provided limits instead of resetting them to the dtype range.
-        self._manual_range_from_init = scale_min is not None
+        self._manual_range_from_init = scale_min is not None or scale_max is not None
         self._max_fps = _DEFAULT_MAX_FPS
         self._data_dtype: np.dtype | None = None
         self._fps_last_time = time.monotonic()

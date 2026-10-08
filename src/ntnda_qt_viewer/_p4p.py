@@ -2,19 +2,37 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import logging
+import threading
 import zlib
 from io import BytesIO
 from typing import Any
 
 import numpy as np
+from aioca import CANothing, camonitor
 from p4p.client.thread import Context, Disconnected
 from qtpy.QtCore import QObject, Signal
 
 __all__ = ["NTNDAProvider"]
 
 logger = logging.getLogger(__name__)
+
+_ca_loop: asyncio.AbstractEventLoop | None = None
+_ca_loop_lock = threading.Lock()
+
+
+def _get_ca_loop() -> asyncio.AbstractEventLoop:
+    """Return a shared asyncio loop, running in a daemon thread, for aioca."""
+    global _ca_loop
+    with _ca_loop_lock:
+        if _ca_loop is None:
+            loop = asyncio.new_event_loop()
+            threading.Thread(target=loop.run_forever, name="aioca", daemon=True).start()
+            _ca_loop = loop
+        return _ca_loop
+
 
 # areaDetector/ADCore maps NDDataType -> pv scalar code stored in codec.parameters
 _SCALAR_CODE_TO_DTYPE: dict[int, np.dtype] = {
@@ -51,12 +69,16 @@ class NTNDAProvider(QObject):
         raw_waveform: bool = False,
         image_shape: tuple[int, int] | None = None,
         color: bool = False,
+        use_ca: bool = False,
     ) -> None:
         super().__init__()
         if raw_waveform and image_shape is None:
             raise ValueError("image_shape is required when raw_waveform=True")
+        if use_ca and not raw_waveform:
+            raise ValueError("use_ca is only supported when raw_waveform=True")
         self._channel_name = channel_name
         self._raw_waveform = raw_waveform
+        self._use_ca = use_ca
         # Only used for non-NTNDArray PVs, whose payload is a flat array.
         self._image_shape = image_shape
         self._color = color
@@ -80,6 +102,9 @@ class NTNDAProvider(QObject):
         """Start monitoring the NTNDArray PV."""
         if self._subscription is not None:
             return
+        if self._use_ca:
+            self._start_ca()
+            return
         # Disable automatic NT unwrapping so compressed NTNDArray payloads
         # are delivered as raw Value objects and can be decoded here.
         self._ctxt = Context("pva", nt=False)
@@ -90,10 +115,32 @@ class NTNDAProvider(QObject):
         )
         logger.info("Subscribed to %s", self._channel_name)
 
+    def _start_ca(self) -> None:
+        async def subscribe():
+            # camonitor must be created from within the running loop.
+            return camonitor(
+                self._channel_name, self._monitor_callback, notify_disconnect=True
+            )
+
+        loop = _get_ca_loop()
+        self._subscription = asyncio.run_coroutine_threadsafe(
+            subscribe(), loop
+        ).result()
+        logger.info("Subscribed to %s via Channel Access", self._channel_name)
+
     def stop(self) -> None:
         """Stop monitoring and clean up."""
         if self._subscription is not None:
-            self._subscription.close()
+            if self._use_ca:
+                subscription = self._subscription
+
+                async def close() -> None:
+                    subscription.close()
+
+                # Wait so the close can't race aioca's atexit teardown.
+                asyncio.run_coroutine_threadsafe(close(), _get_ca_loop()).result()
+            else:
+                self._subscription.close()
             self._subscription = None
         if self._ctxt is not None:
             self._ctxt.close()
@@ -103,7 +150,7 @@ class NTNDAProvider(QObject):
     def _monitor_callback(self, value: object) -> None:
         """Called from a p4p worker thread on each PV update."""
         try:
-            if isinstance(value, Disconnected):
+            if isinstance(value, (Disconnected, CANothing)):
                 logger.warning("Channel %s disconnected", self._channel_name)
                 self.disconnected.emit()
                 return
