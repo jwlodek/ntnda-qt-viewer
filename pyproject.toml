@@ -104,5 +104,8 @@ exclude = [
 # The screenshot script drives the widget's internals to stage each shot.
 "scripts/docs/**/*" = ["SLF001"]
 
+[tool.ty.rules]
+unused-type-ignore-comment = "ignore"
+
 [tool.importlinter]
 root_package = "ntnda_qt_viewer"
