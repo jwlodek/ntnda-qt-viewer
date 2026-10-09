@@ -7,10 +7,7 @@ nav = [
   { "Home" = "index.md" },
   { "Usage" = "usage.md" },
   { "Embedding" = "embedding.md" },
-  { "API reference" = [
-    { "NTNDAViewerWidget" = "api/_widget.md" },
-    { "NTNDAProvider" = "api/_p4p.md" },
-  ] },
+  { "API reference" = "api/ntnda_qt_viewer.md" },
 ]
 
 [project.theme]

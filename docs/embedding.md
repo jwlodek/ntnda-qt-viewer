@@ -134,4 +134,4 @@ class MainWindow(QMainWindow):
 | `auto_scale_n_sigma` | `3.0` | N for sigma scaling. |
 
 Arguments after `parent` are keyword-only. See the
-[API reference](api/_widget.md#ntndaviewerwidget) for full descriptions.
+[API reference](api/ntnda_qt_viewer.md#ntndaviewerwidget) for full descriptions.

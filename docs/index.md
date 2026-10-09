@@ -13,8 +13,8 @@ PVs (and plain waveform PVs), built on pyqtgraph and p4p.
 - [Embedding](embedding.md): using `NTNDAViewerWidget` inside your own Qt
   application.
 - API reference (generated with npdoc2md):
-  - [`NTNDAViewerWidget`](api/_widget.md#ntndaviewerwidget)
-  - [`NTNDAProvider`](api/_p4p.md#ntndaprovider)
+  - [`NTNDAViewerWidget`](api/ntnda_qt_viewer.md#ntndaviewerwidget)
+  - [`NTNDAProvider`](api/ntnda_qt_viewer.md#ntndaprovider)
 
 The site is published to GitHub Pages from `main` by the `Docs` workflow.
 

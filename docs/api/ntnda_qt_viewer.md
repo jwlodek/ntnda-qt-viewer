@@ -1,10 +1,5 @@
 # ntnda_qt_viewer
-Top level API.
-
-.. data:: __version__
-    :type: str
-
-    Version number as calculated by https://github.com/pypa/setuptools_scm
+Lightweight Qt live image viewer for EPICS NTNDArray PVs (and plain waveform PVs), built on pyqtgraph and p4p.
 ## Classes
 Classe | Description
 --- | ---

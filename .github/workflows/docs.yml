@@ -30,8 +30,14 @@ jobs:
       - name: Install Qt runtime libraries
         run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0
 
+      - name: Generate API docs
+        run: uv run --frozen --group docs npdoc2md src/ntnda_qt_viewer docs/api
+        env:
+          # npdoc2md imports the package, which loads Qt.
+          QT_QPA_PLATFORM: offscreen
+
       - name: Build site
-        run: uv run --frozen --group docs python scripts/docs/build_docs.py
+        run: uv run --frozen --group docs zensical build
 
       - name: Upload Pages artifact
         if: github.event_name != 'pull_request'

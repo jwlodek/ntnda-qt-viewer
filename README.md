@@ -48,7 +48,7 @@ pip install "ntnda-qt-viewer[codecs]"
 ## Usage
 
 See the [documentation](docs/index.md) for an annotated walkthrough,
-[embedding guide](docs/embedding.md) and [API reference](docs/api/_widget.md).
+[embedding guide](docs/embedding.md) and [API reference](docs/api/ntnda_qt_viewer.md).
 
 Launch from the command line with a top-level prefix:
 
