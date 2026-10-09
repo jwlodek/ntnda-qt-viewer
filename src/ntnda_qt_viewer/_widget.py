@@ -49,6 +49,13 @@ _DEFAULT_PVA_SUFFIX = "Pva1:"
 _COLORMAPS = ("Grayscale", "JET")
 _V_PROFILE_POSITIONS = ("left", "right")
 _H_PROFILE_POSITIONS = ("top", "bottom")
+_AUTO_SCALE_METHODS = ("percentile", "sigma", "minmax")
+# Default clip percentiles, so a few hot pixels don't dominate.
+_AUTO_SCALE_PERCENTILES = (0.1, 99.9)
+# Default n for robust n-sigma (median +/- n * 1.4826 * MAD).
+_AUTO_SCALE_N_SIGMA = 3.0
+# Auto levels are estimated from at most this many evenly strided pixels.
+_AUTO_SCALE_MAX_SAMPLES = 262_144
 
 _RoiDragCallback = Callable[[float, float, float, float], None]
 
@@ -278,9 +285,28 @@ class NTNDAViewerWidget(QWidget):
         scale_min: float | None = None,
         scale_max: float | None = None,
         log_scale: bool = False,
+        auto_scale_method: str = _AUTO_SCALE_METHODS[0],
+        auto_scale_percentiles: tuple[float, float] = _AUTO_SCALE_PERCENTILES,
+        auto_scale_n_sigma: float = _AUTO_SCALE_N_SIGMA,
     ) -> None:
         if colormap is not None and colormap not in _COLORMAPS:
             raise ValueError(f"colormap must be one of {_COLORMAPS}, got {colormap!r}")
+        if auto_scale_method not in _AUTO_SCALE_METHODS:
+            raise ValueError(
+                f"auto_scale_method must be one of {_AUTO_SCALE_METHODS}, "
+                f"got {auto_scale_method!r}"
+            )
+        low_pct, high_pct = (float(p) for p in auto_scale_percentiles)
+        if not 0.0 <= low_pct < high_pct <= 100.0:
+            raise ValueError(
+                "auto_scale_percentiles must satisfy 0 <= low < high <= 100, "
+                f"got {auto_scale_percentiles!r}"
+            )
+        auto_scale_n_sigma = float(auto_scale_n_sigma)
+        if auto_scale_n_sigma <= 0.0:
+            raise ValueError(
+                f"auto_scale_n_sigma must be > 0, got {auto_scale_n_sigma}"
+            )
         if (scale_min is None) != (scale_max is None):
             raise ValueError("scale_min and scale_max must be passed together")
         if scale_min is not None and scale_max is not None:
@@ -360,6 +386,9 @@ class NTNDAViewerWidget(QWidget):
         self._scale_mode = "auto" if scale_min is None else "manual"
         self._manual_scaling_enabled = False
         self._log_scale = log_scale
+        self._auto_method = auto_scale_method
+        self._auto_percentiles = (low_pct, high_pct)
+        self._auto_n_sigma = auto_scale_n_sigma
         self._manual_min: float | None = scale_min
         self._manual_max: float | None = scale_max
         # Keep init-provided limits instead of resetting them to the dtype range.
@@ -1004,14 +1033,26 @@ class NTNDAViewerWidget(QWidget):
         prev_log_scale = self._log_scale
         prev_manual_min = self._manual_min
         prev_manual_max = self._manual_max
+        prev_auto_method = self._auto_method
+        prev_auto_percentiles = self._auto_percentiles
+        prev_auto_n_sigma = self._auto_n_sigma
 
         layout = QVBoxLayout(dialog)
         form = QFormLayout()
 
-        auto_radio = QRadioButton("Auto scale (frame min/max)")
+        auto_radio = QRadioButton("Auto scale")
         manual_radio = QRadioButton("Manual scale")
         auto_radio.setChecked(self._scale_mode == "auto")
         manual_radio.setChecked(self._scale_mode == "manual")
+
+        method_combo = QComboBox()
+        method_combo.addItem("Percentile", "percentile")
+        method_combo.addItem("Robust n-sigma (median/MAD)", "sigma")
+        method_combo.addItem("Min/Max", "minmax")
+        method_combo.setCurrentIndex(method_combo.findData(self._auto_method))
+        low_pct_edit = QLineEdit(f"{self._auto_percentiles[0]:g}")
+        high_pct_edit = QLineEdit(f"{self._auto_percentiles[1]:g}")
+        n_sigma_edit = QLineEdit(f"{self._auto_n_sigma:g}")
 
         log_check = QCheckBox("Log scale")
         log_check.setChecked(self._log_scale)
@@ -1022,16 +1063,21 @@ class NTNDAViewerWidget(QWidget):
         max_val = self._manual_max if self._manual_max is not None else 1.0
         min_edit.setText(str(min_val))
         max_edit.setText(str(max_val))
-        min_edit.setEnabled(manual_radio.isChecked())
-        max_edit.setEnabled(manual_radio.isChecked())
 
-        def _update_manual_enabled() -> None:
-            enabled = manual_radio.isChecked()
-            min_edit.setEnabled(enabled)
-            max_edit.setEnabled(enabled)
+        def _update_enabled() -> None:
+            manual = manual_radio.isChecked()
+            method = method_combo.currentData()
+            min_edit.setEnabled(manual)
+            max_edit.setEnabled(manual)
+            method_combo.setEnabled(not manual)
+            low_pct_edit.setEnabled(not manual and method == "percentile")
+            high_pct_edit.setEnabled(not manual and method == "percentile")
+            n_sigma_edit.setEnabled(not manual and method == "sigma")
 
-        auto_radio.toggled.connect(_update_manual_enabled)
-        manual_radio.toggled.connect(_update_manual_enabled)
+        _update_enabled()
+        auto_radio.toggled.connect(_update_enabled)
+        manual_radio.toggled.connect(_update_enabled)
+        method_combo.currentIndexChanged.connect(_update_enabled)
 
         def _refresh_preview() -> None:
             if self._current_image is not None:
@@ -1039,37 +1085,53 @@ class NTNDAViewerWidget(QWidget):
                 self._refresh_display()
 
         def _apply_from_controls(show_error: bool) -> bool:
+            def _fail(message: str) -> bool:
+                if show_error:
+                    QMessageBox.warning(self, "Scaling Options", message)
+                return False
+
             next_log_scale = log_check.isChecked()
             next_scale_mode = "manual" if manual_radio.isChecked() else "auto"
+            next_auto_method = method_combo.currentData()
 
             next_manual_min = self._manual_min
             next_manual_max = self._manual_max
+            next_percentiles = self._auto_percentiles
+            next_n_sigma = self._auto_n_sigma
             if next_scale_mode == "manual":
                 try:
                     next_manual_min = float(min_edit.text().strip())
                     next_manual_max = float(max_edit.text().strip())
                 except ValueError:
-                    if show_error:
-                        QMessageBox.warning(
-                            self,
-                            "Scaling Options",
-                            "Manual min/max must be numeric values.",
-                        )
-                    return False
+                    return _fail("Manual min/max must be numeric values.")
                 if next_manual_min >= next_manual_max:
-                    if show_error:
-                        QMessageBox.warning(
-                            self,
-                            "Scaling Options",
-                            "Manual min must be less than manual max.",
-                        )
-                    return False
+                    return _fail("Manual min must be less than manual max.")
+            elif next_auto_method == "percentile":
+                try:
+                    low = float(low_pct_edit.text().strip())
+                    high = float(high_pct_edit.text().strip())
+                except ValueError:
+                    return _fail("Percentiles must be numeric values.")
+                if not 0.0 <= low < high <= 100.0:
+                    return _fail("Percentiles must satisfy 0 <= low < high <= 100.")
+                next_percentiles = (low, high)
+            elif next_auto_method == "sigma":
+                try:
+                    next_n_sigma = float(n_sigma_edit.text().strip())
+                except ValueError:
+                    return _fail("N sigma must be a numeric value.")
+                if next_n_sigma <= 0.0:
+                    return _fail("N sigma must be greater than 0.")
 
             self._log_scale = next_log_scale
             self._scale_mode = next_scale_mode
             if next_scale_mode == "manual":
                 self._manual_min = next_manual_min
                 self._manual_max = next_manual_max
+            else:
+                self._auto_method = next_auto_method
+                self._auto_percentiles = next_percentiles
+                self._auto_n_sigma = next_n_sigma
             _refresh_preview()
             return True
 
@@ -1085,12 +1147,20 @@ class NTNDAViewerWidget(QWidget):
         log_check.toggled.connect(_on_preview_change)
         min_edit.textChanged.connect(_on_preview_change)
         max_edit.textChanged.connect(_on_preview_change)
+        method_combo.currentIndexChanged.connect(_on_preview_change)
+        low_pct_edit.textChanged.connect(_on_preview_change)
+        high_pct_edit.textChanged.connect(_on_preview_change)
+        n_sigma_edit.textChanged.connect(_on_preview_change)
 
         form.addRow(auto_radio)
+        form.addRow("Auto Method", method_combo)
+        form.addRow("Low Percentile", low_pct_edit)
+        form.addRow("High Percentile", high_pct_edit)
+        form.addRow("N Sigma", n_sigma_edit)
         form.addRow(manual_radio)
-        form.addRow(log_check)
         form.addRow("Manual Min", min_edit)
         form.addRow("Manual Max", max_edit)
+        form.addRow(log_check)
         layout.addLayout(form)
 
         buttons = QDialogButtonBox(
@@ -1105,6 +1175,9 @@ class NTNDAViewerWidget(QWidget):
             self._log_scale = prev_log_scale
             self._manual_min = prev_manual_min
             self._manual_max = prev_manual_max
+            self._auto_method = prev_auto_method
+            self._auto_percentiles = prev_auto_percentiles
+            self._auto_n_sigma = prev_auto_n_sigma
             _refresh_preview()
             return
 
@@ -1112,6 +1185,33 @@ class NTNDAViewerWidget(QWidget):
         if not self._log_scale:
             return image
         return np.log1p(np.clip(image, a_min=0.0, a_max=None))
+
+    @staticmethod
+    def _auto_levels(
+        image: np.ndarray,
+        method: str = "percentile",
+        percentiles: tuple[float, float] = _AUTO_SCALE_PERCENTILES,
+        n_sigma: float = _AUTO_SCALE_N_SIGMA,
+    ) -> tuple[float, float]:
+        if method == "minmax":
+            # Use every pixel; sampling could miss the true extremes.
+            return float(np.min(image)), float(np.max(image))
+        flat = image.reshape(-1)
+        step = max(1, flat.size // _AUTO_SCALE_MAX_SAMPLES)
+        sample = flat[::step]
+        sample = sample[np.isfinite(sample)]
+        if sample.size == 0:
+            return 0.0, 1.0
+        if method == "sigma":
+            median = np.median(sample)
+            sigma = 1.4826 * np.median(np.abs(sample - median))
+            lo, hi = median - n_sigma * sigma, median + n_sigma * sigma
+        else:
+            lo, hi = np.percentile(sample, percentiles)
+        if hi <= lo:
+            # Mostly uniform frame; the range collapses, so fall back to min/max.
+            lo, hi = np.min(sample), np.max(sample)
+        return float(lo), float(hi)
 
     def _manual_levels(self) -> tuple[float, float] | None:
         if not self._manual_scaling_enabled and self._scale_mode != "manual":
@@ -1530,12 +1630,14 @@ class NTNDAViewerWidget(QWidget):
         else:
             display = image.copy()
         display = self._transform_for_scaling(display)
-        if self._scale_mode == "manual":
-            levels = self._manual_levels()
-            if levels is None:
-                levels = (float(np.min(display)), float(np.max(display)))
-        else:
-            levels = (float(np.min(display)), float(np.max(display)))
+        levels = self._manual_levels() if self._scale_mode == "manual" else None
+        if levels is None:
+            levels = self._auto_levels(
+                display,
+                self._auto_method,
+                self._auto_percentiles,
+                self._auto_n_sigma,
+            )
         if levels[0] >= levels[1]:
             levels = (levels[0], levels[0] + 1.0)
         self._image_item.setImage(display, levels=levels)

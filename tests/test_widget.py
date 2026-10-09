@@ -221,6 +221,72 @@ def test_widget_colormap_defaults_to_grayscale(
     )
 
 
+def test_widget_auto_levels_ignore_hot_pixels() -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    image = np.tile(np.arange(100, dtype=np.float32), (100, 1))
+    image[0, :5] = 65535.0
+    lo, hi = NTNDAViewerWidget._auto_levels(image)
+    assert lo >= 0.0
+    assert hi < 100.0
+
+    flat = np.full((100, 100), 7.0, dtype=np.float32)
+    flat[0, 0] = 9.0
+    assert NTNDAViewerWidget._auto_levels(flat) == (7.0, 9.0)
+
+
+def test_widget_auto_levels_robust_sigma() -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    rng = np.random.default_rng(0)
+    image = rng.normal(100.0, 5.0, (200, 200)).astype(np.float32)
+    image[::20, ::20] = 65535.0
+    lo, hi = NTNDAViewerWidget._auto_levels(image, "sigma", n_sigma=3.0)
+    assert 80.0 < lo < 90.0
+    assert 110.0 < hi < 120.0
+
+    narrow = NTNDAViewerWidget._auto_levels(image, "sigma", n_sigma=1.0)
+    assert lo < narrow[0] < narrow[1] < hi
+
+    lo_pct, hi_pct = NTNDAViewerWidget._auto_levels(image, percentiles=(5.0, 95.0))
+    assert 85.0 < lo_pct < hi_pct < 115.0
+
+
+def test_widget_auto_levels_minmax_uses_full_range() -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    image = np.full((1000, 1000), 10.0, dtype=np.float32)
+    image[123, 457] = 500.0
+    image[999, 1] = -3.0
+    assert NTNDAViewerWidget._auto_levels(image, "minmax") == (-3.0, 500.0)
+
+
+def test_widget_auto_scale_init_options(mocker: MockerFixture, qapp) -> None:
+    import pytest
+
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    widget = NTNDAViewerWidget(
+        "DEV:",
+        auto_scale_method="sigma",
+        auto_scale_percentiles=(1, 99),
+        auto_scale_n_sigma=5,
+    )
+    assert widget._auto_method == "sigma"
+    assert widget._auto_percentiles == (1.0, 99.0)
+    assert widget._auto_n_sigma == 5.0
+
+    with pytest.raises(ValueError):
+        NTNDAViewerWidget("DEV:", auto_scale_method="bogus")
+    with pytest.raises(ValueError):
+        NTNDAViewerWidget("DEV:", auto_scale_percentiles=(99.0, 1.0))
+    with pytest.raises(ValueError):
+        NTNDAViewerWidget("DEV:", auto_scale_n_sigma=0)
+
+
 def test_widget_log_scale_option(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
