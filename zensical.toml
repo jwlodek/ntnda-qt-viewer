@@ -1,0 +1,27 @@
+[project]
+site_name = "ntnda-qt-viewer"
+site_description = "Qt live image viewer for EPICS NTNDArray PVs"
+repo_url = "https://github.com/NSLS2/ntnda-qt-viewer"
+edit_uri = "edit/main/docs/"
+nav = [
+  { "Home" = "index.md" },
+  { "Usage" = "usage.md" },
+  { "Embedding" = "embedding.md" },
+  { "API reference" = [
+    { "NTNDAViewerWidget" = "api/_widget.md" },
+    { "NTNDAProvider" = "api/_p4p.md" },
+  ] },
+]
+
+[project.theme]
+features = [
+  "navigation.sections",
+  "content.code.copy",
+]
+
+[project.markdown_extensions]
+admonition = {}
+tables = {}
+toc.permalink = true
+pymdownx.highlight = {}
+pymdownx.superfences = {}

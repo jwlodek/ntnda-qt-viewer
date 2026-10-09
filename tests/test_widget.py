@@ -569,3 +569,40 @@ def test_widget_initial_scaling_invalid(
         NTNDAViewerWidget("DEV:", scale_min=10)
     with pytest.raises(ValueError):
         NTNDAViewerWidget("DEV:", scale_min=10, scale_max=10)
+
+
+def test_widget_start_stop(mocker: MockerFixture, qapp: QCoreApplication) -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    provider = mocker.MagicMock()
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=provider)
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    widget = NTNDAViewerWidget("DEV:")
+    widget.start()
+    provider.start.assert_called_once()
+    assert provider.channel_name == "DEV:Pva1:Image"
+    assert not widget._start_btn.isEnabled()
+    assert widget._stop_btn.isEnabled()
+    assert widget._display_timer.isActive()
+
+    widget.stop()
+    provider.stop.assert_called_once()
+    assert widget._start_btn.isEnabled()
+    assert not widget._stop_btn.isEnabled()
+    assert not widget._display_timer.isActive()
+
+
+def test_widget_start_requires_prefix(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    provider = mocker.MagicMock()
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=provider)
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    widget = NTNDAViewerWidget("DEV:")
+    widget._prefix_edit.setText("  ")
+    widget.start()
+    provider.start.assert_not_called()

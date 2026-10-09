@@ -69,13 +69,31 @@ _SCALAR_CODE_TO_DTYPE: dict[int, np.dtype] = {
 
 
 class NTNDAProvider(QObject):
-    """Subscribes to an NTNDArray PV via p4p and emits frames as numpy arrays.
+    """Subscribes to an image PV and emits frames as numpy arrays.
 
-    The p4p monitor callback runs in a worker thread. Received images are
-    forwarded to the Qt main thread through the ``new_frame`` signal.
+    The monitor callback runs in a worker thread; frames are forwarded to the
+    Qt main thread through the ``new_frame`` signal.
 
-    p4p auto-unwraps NTNDArray values into ``ntndarray`` objects, which are
-    already shaped numpy arrays with the correct dtype.
+    Parameters
+    ----------
+    channel_name : str, optional
+        Full name of the PV to monitor.
+    raw_waveform : bool, optional
+        Treat the PV as a flat array instead of an NTNDArray. Requires
+        ``image_shape``. Default ``False``.
+    image_shape : tuple of int or None, optional
+        ``(rows, cols)`` used to reshape flat arrays.
+    color : bool, optional
+        Flat arrays are interleaved RGB. Default ``False``.
+    use_ca : bool, optional
+        Monitor over Channel Access instead of PVAccess. Only valid with
+        ``raw_waveform=True``. Default ``False``.
+
+    Raises
+    ------
+    ValueError
+        If ``raw_waveform`` is set without ``image_shape``, or ``use_ca``
+        is set without ``raw_waveform``.
     """
 
     new_frame = Signal(object)

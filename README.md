@@ -5,6 +5,8 @@ A lightweight Qt-based live image viewer for EPICS
 PVs, built on [pyqtgraph](https://pyqtgraph.readthedocs.io/) and
 [p4p](https://mdavidsaver.github.io/p4p/).
 
+![ntnda-qt-viewer with the JET colormap and profiles on the right and top](docs/images/alternate_layout.png)
+
 ## Features
 
 - Live streaming from any NTNDArray PVAccess channel
@@ -44,6 +46,9 @@ pip install "ntnda-qt-viewer[codecs]"
 ```
 
 ## Usage
+
+See the [documentation](docs/index.md) for an annotated walkthrough,
+[embedding guide](docs/embedding.md) and [API reference](docs/api/_widget.md).
 
 Launch from the command line with a top-level prefix:
 

@@ -8,3 +8,5 @@ _version.py
 .htmlcov/
 .venv/
 coverage.xml
+# Zensical build output
+site/

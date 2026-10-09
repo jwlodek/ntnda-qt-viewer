@@ -257,10 +257,75 @@ class _StatusIndicator(QLabel):
 
 
 class NTNDAViewerWidget(QWidget):
-    """A Qt widget using pyqtgraph ImageView to display NTNDArray images.
+    """Live image viewer for EPICS NTNDArray (or flat waveform) PVs.
 
-    Includes draggable crosshair lines on the image and synchronised
-    horizontal/vertical pixel profile plots.
+    Shows the image with draggable crosshair lines, linked horizontal and
+    vertical pixel profile plots, ROI overlays backed by areaDetector ROI
+    plugin PVs, and a settings menu for scaling, colormap and layout.
+
+    Parameters
+    ----------
+    prefix : str
+        Top-level PV prefix, e.g. ``"DEV:XSPD1:"``. With ``raw_waveform=True``
+        this is the full array PV name. ROI PVs are always
+        ``<prefix><roi suffix>{MinX,MinY,SizeX,SizeY}``.
+    pva_suffix : str, optional
+        PVA plugin suffix; the image PV is ``<prefix><pva_suffix>Image``.
+        Ignored when ``raw_waveform=True``. Default ``"Pva1:"``.
+    auto_resize_on_first_image : bool, optional
+        Resize the widget to fit the first received frame. Useful for
+        stand-alone windows, usually off when embedded. Default ``False``.
+    parent : QWidget or None, optional
+        Qt parent widget.
+    colormap : {"Grayscale", "JET"} or None, optional
+        Initial colormap for mono images. ``None`` means Grayscale. Ignored
+        (with a logged warning if set) for color images.
+    show_profile_lines : bool, optional
+        Show the crosshair lines on the image. Default ``False``.
+    show_roi_controls : bool, optional
+        Show the ROI controls bar under the image. Default ``True``.
+    v_profile_position : {"left", "right"}, optional
+        Side of the image for the vertical profile plot. Default ``"left"``.
+    h_profile_position : {"top", "bottom"}, optional
+        Side of the image for the horizontal profile plot. Default
+        ``"bottom"``.
+    use_opengl : bool, optional
+        Render the plots with an OpenGL viewport. On some Linux setups this
+        stops popup menus from painting. Default ``False``.
+    raw_waveform : bool, optional
+        Treat the PV as a flat array instead of an NTNDArray. Requires
+        ``image_shape``. Default ``False``.
+    image_shape : tuple of int or None, optional
+        ``(rows, cols)`` used to reshape the flat array. Only valid with
+        ``raw_waveform=True``.
+    color : bool, optional
+        The flat array is interleaved RGB. Only valid with
+        ``raw_waveform=True``. Default ``False``.
+    use_ca : bool, optional
+        Connect over Channel Access instead of PVAccess. Only valid with
+        ``raw_waveform=True``. Default ``False``.
+    num_rois : int, optional
+        Number of ROIs. Default ``4``.
+    roi_suffix_pattern : str, optional
+        Format string producing ROI suffixes for ``1..num_rois``. Default
+        ``"ROI{}:"``.
+    scale_min, scale_max : float or None, optional
+        Start in manual scaling over this range. Must be passed together.
+    log_scale : bool, optional
+        Start with log intensity scaling. Default ``False``.
+    auto_scale_method : {"percentile", "sigma", "minmax"}, optional
+        How levels are chosen in auto scaling. Default ``"percentile"``.
+    auto_scale_percentiles : tuple of float, optional
+        Low and high clip percentiles for ``"percentile"``. Default
+        ``(0.1, 99.9)``.
+    auto_scale_n_sigma : float, optional
+        N for ``"sigma"``: median +/- N robust standard deviations.
+        Default ``3.0``.
+
+    Raises
+    ------
+    ValueError
+        If an option is out of range or options are combined invalidly.
     """
 
     def __init__(
@@ -541,8 +606,8 @@ class NTNDAViewerWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _connect_signals(self) -> None:
-        self._start_btn.clicked.connect(self._on_start)
-        self._stop_btn.clicked.connect(self._on_stop)
+        self._start_btn.clicked.connect(self.start)
+        self._stop_btn.clicked.connect(self.stop)
         self._provider.new_frame.connect(self._on_new_frame)
         self._provider.disconnected.connect(self._on_disconnected)
         self._colormap_combo.currentTextChanged.connect(self._on_colormap_changed)
@@ -1551,10 +1616,16 @@ class NTNDAViewerWidget(QWidget):
         self._v_profile_curve.setData(v_profile, np.arange(rows))
 
     # ------------------------------------------------------------------
-    # Button handlers
+    # Start / stop
     # ------------------------------------------------------------------
 
-    def _on_start(self) -> None:
+    def start(self) -> None:
+        """Subscribe to the image PV and start updating the display.
+
+        Uses the prefix currently in the prefix field. Does nothing if the
+        prefix (or, for NTNDArrays, the PVA suffix) is empty. Equivalent to
+        pressing **Start**.
+        """
         prefix = self._prefix_edit.text().strip()
         pva_suffix = self._pva_suffix.strip()
         if not prefix or (not self._raw_waveform and not pva_suffix):
@@ -1575,7 +1646,11 @@ class NTNDAViewerWidget(QWidget):
         self._display_timer.start()
         self._status_label.setText(f"Subscribed to {channel}")
 
-    def _on_stop(self) -> None:
+    def stop(self) -> None:
+        """Unsubscribe from the image PV and stop updating the display.
+
+        Safe to call when not running. Equivalent to pressing **Stop**.
+        """
         self._provider.stop()
         self._display_timer.stop()
         self._start_btn.setEnabled(True)
@@ -1737,6 +1812,7 @@ class NTNDAViewerWidget(QWidget):
         )
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        """Stop the image monitor and close the ROI PV context."""
         self._display_timer.stop()
         self._provider.stop()
         if self._roi_context is not None:

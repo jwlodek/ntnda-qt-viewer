@@ -59,6 +59,10 @@ dev = [
     "types-mock",
     "import-linter",
 ]
+docs = [
+    "zensical",
+    "npdoc2md @ git+https://github.com/jwlodek/npdoc2md@main",
+]
 
 
 [tool.setuptools_scm]
@@ -97,6 +101,8 @@ exclude = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*" = ["SLF001"]
+# The screenshot script drives the widget's internals to stage each shot.
+"scripts/docs/**/*" = ["SLF001"]
 
 [tool.importlinter]
 root_package = "ntnda_qt_viewer"
