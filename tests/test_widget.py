@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from typing import cast
+from unittest.mock import MagicMock
+
 import numpy as np
+import pytest
 from pytest_mock import MockerFixture
+from qtpy.QtCore import QCoreApplication
 from qtpy.QtWidgets import QWidget
 
 
-def test_widget_creation(mocker: MockerFixture, qapp) -> None:
+def test_widget_creation(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     """Test creating an NTNDAViewerWidget instance."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -21,7 +26,7 @@ def test_widget_creation(mocker: MockerFixture, qapp) -> None:
     assert isinstance(widget, QWidget)
 
 
-def test_widget_initial_state(mocker: MockerFixture, qapp) -> None:
+def test_widget_initial_state(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     """Test initial state of the widget."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -38,7 +43,7 @@ def test_widget_initial_state(mocker: MockerFixture, qapp) -> None:
     assert widget._current_image is None
 
 
-def test_normalize_roi_suffixes(mocker: MockerFixture, qapp) -> None:
+def test_normalize_roi_suffixes(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     """Test ROI suffix normalization."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -57,7 +62,9 @@ def test_normalize_roi_suffixes(mocker: MockerFixture, qapp) -> None:
     assert len(suffixes) == 3
 
 
-def test_widget_set_max_framerate(mocker: MockerFixture, qapp) -> None:
+def test_widget_set_max_framerate(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test setting max framerate."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -81,7 +88,9 @@ def test_widget_set_max_framerate(mocker: MockerFixture, qapp) -> None:
     assert widget._max_fps == 240
 
 
-def test_widget_roi_field_channel(mocker: MockerFixture, qapp) -> None:
+def test_widget_roi_field_channel(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test ROI field channel naming."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -100,7 +109,9 @@ def test_widget_roi_field_channel(mocker: MockerFixture, qapp) -> None:
     assert channel == "DEV:XSPD1:Pva1:ROI2:SizeY"
 
 
-def test_widget_build_image_channel(mocker: MockerFixture, qapp) -> None:
+def test_widget_build_image_channel(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test image channel naming."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -116,7 +127,9 @@ def test_widget_build_image_channel(mocker: MockerFixture, qapp) -> None:
     assert channel == "DEV:XSPD1:Pva1:Image"
 
 
-def test_widget_raw_array_uses_prefix_as_pv(mocker: MockerFixture, qapp) -> None:
+def test_widget_raw_array_uses_prefix_as_pv(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     provider_cls = mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
@@ -137,7 +150,9 @@ def test_widget_raw_array_uses_prefix_as_pv(mocker: MockerFixture, qapp) -> None
     assert widget._roi_field_channel("ROI1:", "MinX") == "DEV:Array:ROI1:MinX"
 
 
-def test_widget_invalid_image_shape_options(mocker: MockerFixture, qapp) -> None:
+def test_widget_invalid_image_shape_options(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     import pytest
 
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
@@ -155,7 +170,9 @@ def test_widget_invalid_image_shape_options(mocker: MockerFixture, qapp) -> None
         NTNDAViewerWidget("DEV:", use_ca=True)
 
 
-def test_widget_num_rois_with_pattern(mocker: MockerFixture, qapp) -> None:
+def test_widget_num_rois_with_pattern(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
@@ -174,7 +191,7 @@ def test_widget_num_rois_with_pattern(mocker: MockerFixture, qapp) -> None:
     assert widget._roi_suffixes == ["ROI1:", "ROI2:", "ROI3:", "ROI4:"]
 
 
-def test_widget_num_rois_invalid(mocker: MockerFixture, qapp) -> None:
+def test_widget_num_rois_invalid(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     import pytest
 
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
@@ -186,7 +203,9 @@ def test_widget_num_rois_invalid(mocker: MockerFixture, qapp) -> None:
         NTNDAViewerWidget("DEV:", num_rois=-1)
 
 
-def test_widget_colormap_defaults_to_grayscale(mocker: MockerFixture, qapp) -> None:
+def test_widget_colormap_defaults_to_grayscale(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
@@ -197,10 +216,12 @@ def test_widget_colormap_defaults_to_grayscale(mocker: MockerFixture, qapp) -> N
 
     widget._current_image = np.zeros((4, 4), dtype=np.uint8)
     widget._on_colormap_changed("JET")
-    widget._image_item.setLookupTable.assert_called_with(widget._jet_lut)
+    cast(MagicMock, widget._image_item.setLookupTable).assert_called_with(
+        widget._jet_lut
+    )
 
 
-def test_widget_log_scale_option(mocker: MockerFixture, qapp) -> None:
+def test_widget_log_scale_option(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
@@ -215,7 +236,7 @@ def test_widget_log_scale_option(mocker: MockerFixture, qapp) -> None:
 
 
 def test_widget_colormap_ignored_for_color_image(
-    mocker: MockerFixture, qapp, caplog
+    mocker: MockerFixture, qapp: QCoreApplication, caplog: pytest.LogCaptureFixture
 ) -> None:
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -227,7 +248,7 @@ def test_widget_colormap_ignored_for_color_image(
     widget._current_image = color_image
     with caplog.at_level("WARNING"):
         widget._apply_colormap()
-    widget._image_item.setLookupTable.assert_called_with(None)
+    cast(MagicMock, widget._image_item.setLookupTable).assert_called_with(None)
     assert "Ignoring colormap" not in caplog.text
 
     widget = NTNDAViewerWidget("DEV:", colormap="JET")
@@ -235,11 +256,11 @@ def test_widget_colormap_ignored_for_color_image(
     with caplog.at_level("WARNING"):
         widget._apply_colormap()
         widget._apply_colormap()
-    widget._image_item.setLookupTable.assert_called_with(None)
+    cast(MagicMock, widget._image_item.setLookupTable).assert_called_with(None)
     assert caplog.text.count("Ignoring colormap") == 1
 
 
-def test_widget_dtype_min_max(mocker: MockerFixture, qapp) -> None:
+def test_widget_dtype_min_max(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     """Test dtype min/max calculation."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -260,7 +281,7 @@ def test_widget_dtype_min_max(mocker: MockerFixture, qapp) -> None:
     assert np.isfinite(max_val)
 
 
-def test_widget_build_jet_lut(mocker: MockerFixture, qapp) -> None:
+def test_widget_build_jet_lut(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     """Test JET colormap LUT generation."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -278,7 +299,9 @@ def test_widget_build_jet_lut(mocker: MockerFixture, qapp) -> None:
     assert lut.max() <= 255
 
 
-def test_widget_on_show_roi_labels_toggled(mocker: MockerFixture, qapp) -> None:
+def test_widget_on_show_roi_labels_toggled(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test ROI labels toggle."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -300,7 +323,7 @@ def test_widget_on_show_roi_labels_toggled(mocker: MockerFixture, qapp) -> None:
     assert widget._show_roi_labels is False
 
 
-def test_widget_set_active_roi(mocker: MockerFixture, qapp) -> None:
+def test_widget_set_active_roi(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     """Test setting active ROI."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -317,7 +340,9 @@ def test_widget_set_active_roi(mocker: MockerFixture, qapp) -> None:
     assert widget._active_roi_idx == 1
 
 
-def test_widget_source_to_display_roi(mocker: MockerFixture, qapp) -> None:
+def test_widget_source_to_display_roi(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test source to display ROI coordinate transformation."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -337,7 +362,9 @@ def test_widget_source_to_display_roi(mocker: MockerFixture, qapp) -> None:
     assert sy > 0
 
 
-def test_widget_display_to_source_roi(mocker: MockerFixture, qapp) -> None:
+def test_widget_display_to_source_roi(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test display to source ROI coordinate transformation."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -357,7 +384,9 @@ def test_widget_display_to_source_roi(mocker: MockerFixture, qapp) -> None:
     assert sy > 0
 
 
-def test_widget_on_colormap_changed(mocker: MockerFixture, qapp) -> None:
+def test_widget_on_colormap_changed(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test colormap change handler."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -377,7 +406,9 @@ def test_widget_on_colormap_changed(mocker: MockerFixture, qapp) -> None:
     assert widget._current_colormap == "JET"
 
 
-def test_widget_on_profile_lines_toggled(mocker: MockerFixture, qapp) -> None:
+def test_widget_on_profile_lines_toggled(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test profile lines toggle."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -399,7 +430,7 @@ def test_widget_on_profile_lines_toggled(mocker: MockerFixture, qapp) -> None:
     assert widget._show_profile_lines is False
 
 
-def test_widget_set_roi_mode(mocker: MockerFixture, qapp) -> None:
+def test_widget_set_roi_mode(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     """Test setting ROI mode."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -418,7 +449,9 @@ def test_widget_set_roi_mode(mocker: MockerFixture, qapp) -> None:
     assert widget._roi_set_mode_active is False
 
 
-def test_widget_update_dtype_defaults(mocker: MockerFixture, qapp) -> None:
+def test_widget_update_dtype_defaults(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test updating dtype defaults."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -439,7 +472,7 @@ def test_widget_update_dtype_defaults(mocker: MockerFixture, qapp) -> None:
     assert widget._manual_max > 0
 
 
-def test_widget_initial_scaling(mocker: MockerFixture, qapp) -> None:
+def test_widget_initial_scaling(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
@@ -456,7 +489,9 @@ def test_widget_initial_scaling(mocker: MockerFixture, qapp) -> None:
     assert widget._manual_levels() == (np.log1p(10.0), np.log1p(200.0))
 
 
-def test_widget_initial_scaling_invalid(mocker: MockerFixture, qapp) -> None:
+def test_widget_initial_scaling_invalid(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     import pytest
 
     from ntnda_qt_viewer._widget import NTNDAViewerWidget

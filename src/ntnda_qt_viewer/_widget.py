@@ -6,13 +6,14 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
 import pyqtgraph as pg
 from p4p.client.thread import Context
-from qtpy.QtCore import QPoint, QRect, QSize, Qt, QTimer
-from qtpy.QtGui import QAction, QActionGroup, QColor
+from pyqtgraph.GraphicsScene.mouseEvents import MouseDragEvent
+from qtpy.QtCore import QPoint, QPointF, QRect, QSize, Qt, QTimer
+from qtpy.QtGui import QAction, QActionGroup, QCloseEvent, QColor
 from qtpy.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -20,6 +21,8 @@ from qtpy.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QFrame,
+    QGraphicsGridLayout,
+    QGraphicsSceneMouseEvent,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -30,6 +33,7 @@ from qtpy.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -45,6 +49,8 @@ _DEFAULT_PVA_SUFFIX = "Pva1:"
 _COLORMAPS = ("Grayscale", "JET")
 _V_PROFILE_POSITIONS = ("left", "right")
 _H_PROFILE_POSITIONS = ("top", "bottom")
+
+_RoiDragCallback = Callable[[float, float, float, float], None]
 
 # One-line orientation control.
 # Change this to another key in _ORIENTATION_PRESETS as needed.
@@ -71,20 +77,20 @@ class _ROIModel:
 class _ImageViewBox(pg.ViewBox):
     """ViewBox with right-drag zoom-to-rect and double-click reset."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self) -> None:
+        super().__init__()
         self._set_roi_mode = False
-        self._roi_drag_callback = None
+        self._roi_drag_callback: _RoiDragCallback | None = None
 
-    def set_roi_drag_mode(self, enabled: bool, callback) -> None:
+    def set_roi_drag_mode(self, enabled: bool, callback: _RoiDragCallback) -> None:
         self._set_roi_mode = enabled
         self._roi_drag_callback = callback
 
-    def mouseDoubleClickEvent(self, ev):
+    def mouseDoubleClickEvent(self, ev: QGraphicsSceneMouseEvent) -> None:
         self.autoRange(padding=0)
         ev.accept()
 
-    def mouseDragEvent(self, ev, axis=None):
+    def mouseDragEvent(self, ev: MouseDragEvent, axis: int | None = None) -> None:
         if ev.button() == Qt.MouseButton.RightButton:
             ev.accept()
             if ev.isFinish():
@@ -106,7 +112,13 @@ class _ImageViewBox(pg.ViewBox):
 class _FlowLayout(QLayout):
     """A simple wrapping flow layout for compact control groups."""
 
-    def __init__(self, parent=None, margin=0, hspacing=6, vspacing=4):
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        margin: int = 0,
+        hspacing: int = 6,
+        vspacing: int = 4,
+    ) -> None:
         super().__init__(parent)
         self._items: list[QLayoutItem] = []
         self._margin = margin
@@ -123,30 +135,30 @@ class _FlowLayout(QLayout):
     def verticalSpacing(self) -> int:
         return self._vspacing
 
-    def addWidget(self, widget) -> None:
+    def addWidget(self, widget: QWidget) -> None:
         # Keep QWidget behavior for runtime and support mocks in tests.
         if isinstance(widget, QWidget):
             super().addWidget(widget)
             return
 
         class _MockItem:
-            def __init__(self, obj):
+            def __init__(self, obj: object) -> None:
                 self._obj = obj
 
-            def sizeHint(self):
-                hint = getattr(self._obj, "sizeHint", None)
+            def sizeHint(self) -> QSize:
+                hint: object = getattr(self._obj, "sizeHint", None)
                 if callable(hint):
-                    return hint()
+                    return cast(QSize, hint())
                 return QSize(100, 24)
 
-            def minimumSize(self):
-                minimum = getattr(self._obj, "minimumSize", None)
+            def minimumSize(self) -> QSize:
+                minimum: object = getattr(self._obj, "minimumSize", None)
                 if callable(minimum):
-                    return minimum()
+                    return cast(QSize, minimum())
                 return self.sizeHint()
 
-            def setGeometry(self, rect):
-                setter = getattr(self._obj, "setGeometry", None)
+            def setGeometry(self, rect: QRect) -> None:
+                setter: object = getattr(self._obj, "setGeometry", None)
                 if callable(setter):
                     setter(rect)
 
@@ -163,7 +175,8 @@ class _FlowLayout(QLayout):
             return self._items[index]
         return None
 
-    def takeAt(self, index: int) -> QLayoutItem | None:
+    # Qt expects nullptr when out of range, but PySide6's stub omits Optional.
+    def takeAt(self, index: int) -> QLayoutItem | None:  # type: ignore
         if 0 <= index < len(self._items):
             return self._items.pop(index)
         return None
@@ -414,7 +427,7 @@ class NTNDAViewerWidget(QWidget):
         root.addLayout(controls)
 
         # --- graphics layout: aligned image + profile plots ---
-        self._glw: Any = pg.GraphicsLayoutWidget()
+        self._glw = pg.GraphicsLayoutWidget()
         # Off by default: a QOpenGLWidget viewport can stop popup menus from painting.
         if self._use_opengl:
             self._glw.useOpenGL(True)
@@ -432,22 +445,22 @@ class NTNDAViewerWidget(QWidget):
 
         # Vertical profile plot; placed in the layout by _apply_profile_layout()
         self._v_profile_plot = pg.PlotItem()
-        self._v_profile_plot.setMouseEnabled(x=False, y=False)
+        self._v_profile_plot.getViewBox().setMouseEnabled(x=False, y=False)
         self._v_profile_plot.setMenuEnabled(False)
         self._v_profile_plot.hideAxis("bottom")
-        self._v_profile_plot.invertY(bool(self._orientation["invert_y"]))
-        self._v_profile_curve = self._v_profile_plot.plot(pen="c")
+        self._v_profile_plot.getViewBox().invertY(bool(self._orientation["invert_y"]))
+        self._v_profile_curve: pg.PlotDataItem = self._v_profile_plot.plot(pen="c")
 
         # Image view sits in the centre of a 3x3 grid (row 1, col 1)
-        vb = _ImageViewBox()
-        self._image_plot = self._glw.addPlot(row=1, col=1, viewBox=vb)
-        self._image_plot.setMouseEnabled(x=True, y=True)
+        self._image_vb = _ImageViewBox()
+        self._image_plot = self._glw.ci.addPlot(row=1, col=1, viewBox=self._image_vb)
+        self._image_vb.setMouseEnabled(x=True, y=True)
         self._image_plot.setMenuEnabled(False)
         self._image_plot.hideAxis("left")
         self._image_plot.hideAxis("bottom")
-        self._image_plot.getViewBox().invertX(bool(self._orientation["invert_x"]))
-        self._image_plot.getViewBox().invertY(bool(self._orientation["invert_y"]))
-        vb.set_roi_drag_mode(False, self._on_set_roi_rectangle)
+        self._image_vb.invertX(bool(self._orientation["invert_x"]))
+        self._image_vb.invertY(bool(self._orientation["invert_y"]))
+        self._image_vb.set_roi_drag_mode(False, self._on_set_roi_rectangle)
         self._image_item = pg.ImageItem(autoDownsample=True, axisOrder="row-major")
         self._image_plot.addItem(self._image_item)
 
@@ -461,7 +474,7 @@ class NTNDAViewerWidget(QWidget):
         )
 
         # Link vertical profile Y axis to image Y axis
-        self._v_profile_plot.setYLink(self._image_plot)
+        self._v_profile_plot.getViewBox().setYLink(self._image_vb)
 
         # Crosshair lines on the image
         self._h_image_line = pg.InfiniteLine(
@@ -478,14 +491,14 @@ class NTNDAViewerWidget(QWidget):
 
         # Horizontal profile plot; placed in the layout by _apply_profile_layout()
         self._h_profile_plot = pg.PlotItem()
-        self._h_profile_plot.setMouseEnabled(x=False, y=False)
+        self._h_profile_plot.getViewBox().setMouseEnabled(x=False, y=False)
         self._h_profile_plot.setMenuEnabled(False)
         self._h_profile_plot.hideAxis("left")
-        self._h_profile_plot.invertX(bool(self._orientation["invert_x"]))
-        self._h_profile_curve = self._h_profile_plot.plot(pen="c")
+        self._h_profile_plot.getViewBox().invertX(bool(self._orientation["invert_x"]))
+        self._h_profile_curve: pg.PlotDataItem = self._h_profile_plot.plot(pen="c")
 
         # Link horizontal profile X axis to image X axis
-        self._h_profile_plot.setXLink(self._image_plot)
+        self._h_profile_plot.getViewBox().setXLink(self._image_vb)
 
         self._apply_profile_layout()
 
@@ -557,9 +570,11 @@ class NTNDAViewerWidget(QWidget):
             action.setCheckable(True)
             action.setChecked(pos == self._v_profile_position)
             v_pos_group.addAction(action)
-            action.triggered.connect(
-                lambda checked, p=pos: self._set_v_profile_position(p)
-            )
+
+            def on_v_pos(_checked: bool = False, p: str = pos) -> None:
+                self._set_v_profile_position(p)
+
+            action.triggered.connect(on_v_pos)
             self._v_profile_position_actions[pos] = action
 
         h_pos_menu = menu.addMenu("Horizontal Profile Position")
@@ -571,9 +586,11 @@ class NTNDAViewerWidget(QWidget):
             action.setCheckable(True)
             action.setChecked(pos == self._h_profile_position)
             h_pos_group.addAction(action)
-            action.triggered.connect(
-                lambda checked, p=pos: self._set_h_profile_position(p)
-            )
+
+            def on_h_pos(_checked: bool = False, p: str = pos) -> None:
+                self._set_h_profile_position(p)
+
+            action.triggered.connect(on_h_pos)
             self._h_profile_position_actions[pos] = action
 
         menu.addSeparator()
@@ -586,9 +603,11 @@ class NTNDAViewerWidget(QWidget):
             action.setCheckable(True)
             action.setChecked(name == self._selected_colormap)
             action_group.addAction(action)
-            action.triggered.connect(
-                lambda checked, cmap=name: self._colormap_combo.setCurrentText(cmap)
-            )
+
+            def on_colormap(_checked: bool = False, cmap: str = name) -> None:
+                self._colormap_combo.setCurrentText(cmap)
+
+            action.triggered.connect(on_colormap)
             self._colormap_actions[name] = action
 
         self._settings_btn.setMenu(menu)
@@ -628,7 +647,8 @@ class NTNDAViewerWidget(QWidget):
         self._h_profile_plot.showAxis("bottom", h_row == 2)
 
         # Image row/col gets most space; the unused outer row/col collapses.
-        layout = ci.layout
+        # GraphicsLayout shadows QGraphicsWidget.layout() with its grid layout.
+        layout = cast(QGraphicsGridLayout, ci.layout)
         for i in range(3):
             layout.setRowStretchFactor(i, 0)
             layout.setColumnStretchFactor(i, 0)
@@ -675,13 +695,13 @@ class NTNDAViewerWidget(QWidget):
         dialog.setMinimumHeight(300)
         layout = QVBoxLayout(dialog)
 
-        scroll = pg.QtWidgets.QScrollArea()
+        scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
         scroll_layout.setSpacing(8)
 
-        roi_widgets: dict[int, dict] = {}
+        suffix_edits: dict[int, QLineEdit] = {}
 
         def populate_roi_widgets() -> None:
             while scroll_layout.count() > 0:
@@ -690,7 +710,7 @@ class NTNDAViewerWidget(QWidget):
                     widget = item.widget()
                     if widget:
                         widget.deleteLater()
-            roi_widgets.clear()
+            suffix_edits.clear()
 
             for idx, suffix in enumerate(self._roi_suffixes):
                 group = QWidget()
@@ -729,7 +749,7 @@ class NTNDAViewerWidget(QWidget):
                 group_layout.addWidget(remove_btn)
 
                 scroll_layout.addWidget(group)
-                roi_widgets[idx] = {"suffix_edit": suffix_edit}
+                suffix_edits[idx] = suffix_edit
 
             scroll_layout.addStretch()
 
@@ -784,8 +804,8 @@ class NTNDAViewerWidget(QWidget):
 
         def apply_changes() -> None:
             modified = False
-            for idx, widgets in roi_widgets.items():
-                new_suffix = widgets["suffix_edit"].text().strip()
+            for idx, suffix_edit in suffix_edits.items():
+                new_suffix = suffix_edit.text().strip()
                 normalized = self._normalize_roi_suffixes([new_suffix])
                 if not normalized:
                     continue
@@ -837,21 +857,21 @@ class NTNDAViewerWidget(QWidget):
             set_btn = QPushButton("Set")
             set_btn.setCheckable(True)
             set_btn.setFixedHeight(24)
-            set_btn.clicked.connect(
-                lambda checked, roi_idx=idx: self._on_set_roi_button_clicked(
-                    roi_idx, checked
-                )
-            )
+
+            def on_set_clicked(checked: bool = False, roi_idx: int = idx) -> None:
+                self._on_set_roi_button_clicked(roi_idx, checked)
+
+            set_btn.clicked.connect(on_set_clicked)
             group_layout.addWidget(set_btn)
             self._roi_set_buttons.append(set_btn)
 
             enable_check = QCheckBox("Enable")
             enable_check.setChecked(False)
-            enable_check.toggled.connect(
-                lambda visible, roi_idx=idx: self._toggle_roi_visibility(
-                    roi_idx, visible
-                )
-            )
+
+            def on_enable_toggled(visible: bool, roi_idx: int = idx) -> None:
+                self._toggle_roi_visibility(roi_idx, visible)
+
+            enable_check.toggled.connect(on_enable_toggled)
             group_layout.addWidget(enable_check)
             self._roi_enable_checks.append(enable_check)
             self._roi_controls_layout.addWidget(group)
@@ -952,11 +972,15 @@ class NTNDAViewerWidget(QWidget):
                     "Ignoring colormap %r for color image", self._selected_colormap
                 )
                 self._warned_colormap_ignored = True
-            self._image_item.setLookupTable(None)  # type: ignore
+            self._clear_lookup_table()
         elif self._selected_colormap == "JET":
             self._image_item.setLookupTable(self._jet_lut)
         else:
-            self._image_item.setLookupTable(None)  # type: ignore
+            self._clear_lookup_table()
+
+    def _clear_lookup_table(self) -> None:
+        # pyqtgraph accepts None to clear the LUT, but its annotation omits it.
+        self._image_item.setLookupTable(None)  # type: ignore
 
     def _on_colormap_changed(self, name: str) -> None:
         self._selected_colormap = name
@@ -1109,9 +1133,7 @@ class NTNDAViewerWidget(QWidget):
     def _set_roi_mode_enabled(self, enabled: bool) -> None:
         self._set_roi_mode = enabled
         self._roi_set_mode_active = enabled
-        self._image_plot.getViewBox().set_roi_drag_mode(
-            enabled, self._on_set_roi_rectangle
-        )
+        self._image_vb.set_roi_drag_mode(enabled, self._on_set_roi_rectangle)
         if enabled:
             self._status_label.setText(
                 f"Set ROI mode: right-drag to define ROI{self._active_roi_idx + 1}"
@@ -1258,9 +1280,11 @@ class NTNDAViewerWidget(QWidget):
             rect.addScaleHandle([0.5, 1.0], [0.5, 0.0])
             rect.addScaleHandle([0.0, 0.5], [1.0, 0.5])
             rect.addScaleHandle([1.0, 0.5], [0.0, 0.5])
-            rect.sigRegionChanged.connect(
-                lambda _=None, roi_idx=idx: self._on_roi_region_changed(roi_idx)
-            )
+
+            def on_region_changed(_roi: object = None, roi_idx: int = idx) -> None:
+                self._on_roi_region_changed(roi_idx)
+
+            rect.sigRegionChanged.connect(on_region_changed)
             rect.setVisible(False)
             self._image_plot.addItem(rect)
 
@@ -1521,19 +1545,19 @@ class NTNDAViewerWidget(QWidget):
 
         if first_image:
             # Lock all views to [0, dim] with no padding
-            self._image_plot.setXRange(0, cols, padding=0)
-            self._image_plot.setYRange(0, rows, padding=0)
-            self._h_profile_plot.setXRange(0, cols, padding=0)
-            self._v_profile_plot.setYRange(0, rows, padding=0)
+            self._image_vb.setXRange(0, cols, padding=0)
+            self._image_vb.setYRange(0, rows, padding=0)
+            self._h_profile_plot.getViewBox().setXRange(0, cols, padding=0)
+            self._v_profile_plot.getViewBox().setYRange(0, rows, padding=0)
 
-            self._image_plot.setLimits(
+            self._image_vb.setLimits(
                 xMin=0,
                 xMax=cols,
                 yMin=0,
                 yMax=rows,
             )
-            self._h_profile_plot.setLimits(xMin=0, xMax=cols)
-            self._v_profile_plot.setLimits(yMin=0, yMax=rows)
+            self._h_profile_plot.getViewBox().setLimits(xMin=0, xMax=cols)
+            self._v_profile_plot.getViewBox().setLimits(yMin=0, yMax=rows)
 
             if self._auto_resize_on_first_image:
                 # Profile plots use 1/6 of each axis (stretch 5:1), so scale up
@@ -1576,7 +1600,7 @@ class NTNDAViewerWidget(QWidget):
         self._indicator.set_connected(False)
         self._status_label.setText("Disconnected")
 
-    def _on_mouse_moved(self, args: tuple) -> None:
+    def _on_mouse_moved(self, args: tuple[QPointF]) -> None:
         pos = args[0]
         if not self._image_plot.sceneBoundingRect().contains(pos):
             self._hover_x = -1
@@ -1584,8 +1608,7 @@ class NTNDAViewerWidget(QWidget):
             self._hover_pos = ""
             self._refresh_status_bar()
             return
-        vb = self._image_plot.getViewBox()
-        mouse_point = vb.mapSceneToView(pos)
+        mouse_point: QPointF = self._image_vb.mapSceneToView(pos)
         self._hover_x = int(mouse_point.x())
         self._hover_y = int(mouse_point.y())
         self._update_hover_value()
@@ -1611,7 +1634,7 @@ class NTNDAViewerWidget(QWidget):
             f"{self._fps:.1f} FPS | {img.shape} {img.dtype}{self._hover_pos}"
         )
 
-    def closeEvent(self, event) -> None:  # noqa: N802
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         self._display_timer.stop()
         self._provider.stop()
         if self._roi_context is not None:

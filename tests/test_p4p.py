@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 from pytest_mock import MockerFixture
+from qtpy.QtCore import QCoreApplication
 
 
 def test_ntnda_provider_creation() -> None:
@@ -28,7 +29,7 @@ def test_ntnda_provider_channel_name_property() -> None:
     assert provider.channel_name == "DEV:NEW:PV"
 
 
-def test_ntnda_provider_signals(qapp) -> None:
+def test_ntnda_provider_signals(qapp: QCoreApplication) -> None:
     """Test that NTNDAProvider has correct signals."""
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
@@ -84,7 +85,9 @@ def test_ntnda_provider_dtype_mapping() -> None:
     assert _SCALAR_CODE_TO_DTYPE[10] == np.dtype(np.float64)
 
 
-def test_ntnda_provider_extract_uncompressed(mocker: MockerFixture, qapp) -> None:
+def test_ntnda_provider_extract_uncompressed(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test extracting uncompressed image data."""
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
@@ -110,7 +113,9 @@ def test_ntnda_provider_extract_uncompressed(mocker: MockerFixture, qapp) -> Non
     assert result.dtype == np.uint8
 
 
-def test_ntnda_provider_shape_from_dimension(mocker: MockerFixture, qapp) -> None:
+def test_ntnda_provider_shape_from_dimension(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test converting dimension to shape."""
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
@@ -127,7 +132,7 @@ def test_ntnda_provider_shape_from_dimension(mocker: MockerFixture, qapp) -> Non
     assert shape == (3, 480, 640)
 
 
-def test_ntnda_provider_dtype_from_codec_parameters(qapp) -> None:
+def test_ntnda_provider_dtype_from_codec_parameters(qapp: QCoreApplication) -> None:
     """Test getting dtype from codec parameters."""
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
@@ -146,7 +151,7 @@ def test_ntnda_provider_dtype_from_codec_parameters(qapp) -> None:
     assert dtype == np.dtype(np.float32)
 
 
-def test_ntnda_provider_invalid_codec_parameter(qapp) -> None:
+def test_ntnda_provider_invalid_codec_parameter(qapp: QCoreApplication) -> None:
     """Test handling invalid codec parameters."""
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
@@ -156,7 +161,7 @@ def test_ntnda_provider_invalid_codec_parameter(qapp) -> None:
         provider._dtype_from_codec_parameters(999)
 
 
-def test_ntnda_provider_extract_image_fallback(qapp) -> None:
+def test_ntnda_provider_extract_image_fallback(qapp: QCoreApplication) -> None:
     """Test extract_image fallback for non-NTNDArray values."""
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
@@ -170,7 +175,7 @@ def test_ntnda_provider_extract_image_fallback(qapp) -> None:
     assert result.size > 0
 
 
-def test_ntnda_provider_raw_array_reshapes_flat_array(qapp) -> None:
+def test_ntnda_provider_raw_array_reshapes_flat_array(qapp: QCoreApplication) -> None:
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
     provider = NTNDAProvider("DEV:Array", raw_waveform=True, image_shape=(2, 3))
@@ -181,7 +186,7 @@ def test_ntnda_provider_raw_array_reshapes_flat_array(qapp) -> None:
     np.testing.assert_array_equal(result, np.arange(6).reshape(2, 3))
 
 
-def test_ntnda_provider_raw_array_color(qapp) -> None:
+def test_ntnda_provider_raw_array_color(qapp: QCoreApplication) -> None:
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
     provider = NTNDAProvider(
@@ -193,7 +198,9 @@ def test_ntnda_provider_raw_array_color(qapp) -> None:
     np.testing.assert_array_equal(result[0, 1], [3, 4, 5])
 
 
-def test_ntnda_provider_raw_array_too_small_returns_empty(qapp) -> None:
+def test_ntnda_provider_raw_array_too_small_returns_empty(
+    qapp: QCoreApplication,
+) -> None:
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
     provider = NTNDAProvider("DEV:Array", raw_waveform=True, image_shape=(4, 4))
@@ -216,7 +223,9 @@ def test_ntnda_provider_ca_requires_raw_waveform() -> None:
         NTNDAProvider("DEV:Array", use_ca=True)
 
 
-def test_ntnda_provider_ca_start_stop(mocker: MockerFixture, qapp) -> None:
+def test_ntnda_provider_ca_start_stop(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     from ntnda_qt_viewer._p4p import NTNDAProvider
 
     subscription = mocker.MagicMock()
@@ -242,7 +251,9 @@ def test_ntnda_provider_ca_start_stop(mocker: MockerFixture, qapp) -> None:
     assert provider._subscription is None
 
 
-def test_ntnda_provider_ca_disconnect_emits_signal(mocker: MockerFixture, qapp) -> None:
+def test_ntnda_provider_ca_disconnect_emits_signal(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     from aioca import CANothing
 
     from ntnda_qt_viewer._p4p import NTNDAProvider

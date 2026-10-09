@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import numpy as np
 from pytest_mock import MockerFixture
+from qtpy.QtCore import QCoreApplication
 from qtpy.QtWidgets import QWidget
 
 
-def test_image_viewbox_creation(mocker: MockerFixture, qapp) -> None:
+def test_image_viewbox_creation(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     """Test creating an _ImageViewBox."""
     from ntnda_qt_viewer._widget import _ImageViewBox
 
@@ -17,7 +20,9 @@ def test_image_viewbox_creation(mocker: MockerFixture, qapp) -> None:
     assert viewbox is not None
 
 
-def test_status_indicator_creation(mocker: MockerFixture, qapp) -> None:
+def test_status_indicator_creation(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test creating a _StatusIndicator."""
     from ntnda_qt_viewer._widget import _StatusIndicator
 
@@ -28,7 +33,9 @@ def test_status_indicator_creation(mocker: MockerFixture, qapp) -> None:
     assert isinstance(indicator, QWidget)
 
 
-def test_status_indicator_set_connected(mocker: MockerFixture, qapp) -> None:
+def test_status_indicator_set_connected(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test status indicator connection state."""
     from ntnda_qt_viewer._widget import _StatusIndicator
 
@@ -45,7 +52,9 @@ def test_status_indicator_set_connected(mocker: MockerFixture, qapp) -> None:
     # Visual state should update
 
 
-def test_widget_clear_roi_overlays(mocker: MockerFixture, qapp) -> None:
+def test_widget_clear_roi_overlays(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test clearing ROI overlays."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget, _ROIModel
 
@@ -69,7 +78,9 @@ def test_widget_clear_roi_overlays(mocker: MockerFixture, qapp) -> None:
     assert len(widget._roi_models) == 0
 
 
-def test_widget_clear_roi_controls(mocker: MockerFixture, qapp) -> None:
+def test_widget_clear_roi_controls(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test clearing ROI controls."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -91,7 +102,9 @@ def test_widget_clear_roi_controls(mocker: MockerFixture, qapp) -> None:
     assert len(widget._roi_set_buttons) == 0
 
 
-def test_widget_ensure_roi_context(mocker: MockerFixture, qapp, mock_context) -> None:
+def test_widget_ensure_roi_context(
+    mocker: MockerFixture, qapp: QCoreApplication, mock_context: MagicMock
+) -> None:
     """Test getting or creating ROI context."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -111,7 +124,7 @@ def test_widget_ensure_roi_context(mocker: MockerFixture, qapp, mock_context) ->
     assert context2 is context
 
 
-def test_widget_on_new_frame(mocker: MockerFixture, qapp) -> None:
+def test_widget_on_new_frame(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     """Test handling new frame."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -127,7 +140,7 @@ def test_widget_on_new_frame(mocker: MockerFixture, qapp) -> None:
     assert widget._pending_image is image
 
 
-def test_widget_manual_levels(mocker: MockerFixture, qapp) -> None:
+def test_widget_manual_levels(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     """Test getting manual levels for scaling."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -150,7 +163,9 @@ def test_widget_manual_levels(mocker: MockerFixture, qapp) -> None:
     assert levels == (0.0, 100.0)
 
 
-def test_widget_refresh_display_increments_fps(mocker: MockerFixture, qapp) -> None:
+def test_widget_refresh_display_increments_fps(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test that refresh display increments FPS counter."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -170,7 +185,9 @@ def test_widget_refresh_display_increments_fps(mocker: MockerFixture, qapp) -> N
     assert widget._fps_frame_count > initial_count
 
 
-def test_widget_normalize_roi_suffix_normalization(mocker: MockerFixture, qapp) -> None:
+def test_widget_normalize_roi_suffix_normalization(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test ROI suffix normalization edge cases."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -191,7 +208,9 @@ def test_widget_normalize_roi_suffix_normalization(mocker: MockerFixture, qapp) 
     assert "ROI2::" in suffixes
 
 
-def test_widget_pva_suffix_action_gating(mocker: MockerFixture, qapp) -> None:
+def test_widget_pva_suffix_action_gating(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test that PVA suffix action is gated during connection."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -213,7 +232,9 @@ def test_widget_pva_suffix_action_gating(mocker: MockerFixture, qapp) -> None:
     assert widget._pva_suffix_action.isEnabled()
 
 
-def test_widget_refresh_max_framerate_action_text(mocker: MockerFixture, qapp) -> None:
+def test_widget_refresh_max_framerate_action_text(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test updating max framerate action text."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -231,7 +252,9 @@ def test_widget_refresh_max_framerate_action_text(mocker: MockerFixture, qapp) -
     assert "60" in widget._max_framerate_action.text()
 
 
-def test_widget_exit_set_roi_mode(mocker: MockerFixture, qapp) -> None:
+def test_widget_exit_set_roi_mode(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test exiting ROI set mode."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
@@ -250,7 +273,9 @@ def test_widget_exit_set_roi_mode(mocker: MockerFixture, qapp) -> None:
     assert widget._roi_set_mode_active is False
 
 
-def test_widget_transform_for_scaling(mocker: MockerFixture, qapp) -> None:
+def test_widget_transform_for_scaling(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
     """Test image transformation for scaling."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 

@@ -7,8 +7,9 @@ import importlib
 import logging
 import threading
 import zlib
+from collections.abc import Callable, Iterable, Mapping
 from io import BytesIO
-from typing import Any
+from typing import Protocol, cast
 
 import numpy as np
 from aioca import CANothing, camonitor
@@ -18,6 +19,24 @@ from qtpy.QtCore import QObject, Signal
 __all__ = ["NTNDAProvider"]
 
 logger = logging.getLogger(__name__)
+
+
+class _Subscription(Protocol):
+    def close(self) -> None: ...
+
+
+class _Indexable(Protocol):
+    def __getitem__(self, key: str, /) -> object: ...
+
+
+def _to_int(value: object, default: int) -> int:
+    if isinstance(value, (int, float, str, np.integer, np.floating)):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    return default
+
 
 _ca_loop: asyncio.AbstractEventLoop | None = None
 _ca_loop_lock = threading.Lock()
@@ -83,7 +102,7 @@ class NTNDAProvider(QObject):
         self._image_shape = image_shape
         self._color = color
         self._ctxt: Context | None = None
-        self._subscription = None
+        self._subscription: _Subscription | None = None
 
     @property
     def channel_name(self) -> str:
@@ -116,7 +135,7 @@ class NTNDAProvider(QObject):
         logger.info("Subscribed to %s", self._channel_name)
 
     def _start_ca(self) -> None:
-        async def subscribe():
+        async def subscribe() -> _Subscription:
             # camonitor must be created from within the running loop.
             return camonitor(
                 self._channel_name, self._monitor_callback, notify_disconnect=True
@@ -177,7 +196,7 @@ class NTNDAProvider(QObject):
     def _extract_raw_array_image(
         self, value: object, shape: tuple[int, int]
     ) -> np.ndarray:
-        raw = getattr(value, "raw", value)
+        raw: object = getattr(value, "raw", value)
         if self._has_key(raw, "value"):
             data = np.asarray(self._raw_get(raw, "value", []))
         else:
@@ -200,7 +219,7 @@ class NTNDAProvider(QObject):
 
     def _extract_ntndarray_image(self, value: object) -> np.ndarray:
         """Extract uncompressed image data from an NTNDArray callback value."""
-        raw = getattr(value, "raw", value)
+        raw: object = getattr(value, "raw", value)
 
         if not self._has_key(raw, "value"):
             return np.array(value, copy=True)
@@ -211,7 +230,7 @@ class NTNDAProvider(QObject):
 
         return self._decompress_ntndarray(raw, codec_name)
 
-    def _extract_uncompressed_ntndarray(self, raw) -> np.ndarray:
+    def _extract_uncompressed_ntndarray(self, raw: object) -> np.ndarray:
         data = np.asarray(self._raw_get(raw, "value", []))
         shape = self._shape_from_dimension(self._raw_get(raw, "dimension", []))
         if shape:
@@ -219,9 +238,9 @@ class NTNDAProvider(QObject):
             data = data[:count].reshape(shape)
         return np.array(data, copy=True)
 
-    def _decompress_ntndarray(self, raw, codec_name: str) -> np.ndarray:
-        compressed = int(self._raw_get(raw, "compressedSize", 0))
-        uncompressed = int(self._raw_get(raw, "uncompressedSize", 0))
+    def _decompress_ntndarray(self, raw: object, codec_name: str) -> np.ndarray:
+        compressed = _to_int(self._raw_get(raw, "compressedSize", 0), 0)
+        uncompressed = _to_int(self._raw_get(raw, "uncompressedSize", 0), 0)
         payload = np.asarray(self._raw_get(raw, "value", []))
         payload_bytes = payload.view(np.uint8).tobytes()[:compressed]
 
@@ -244,44 +263,44 @@ class NTNDAProvider(QObject):
             arr = arr.reshape(shape)
         return np.array(arr, copy=True)
 
-    def _dtype_from_codec_parameters(self, parameters: Any) -> np.dtype:
-        try:
-            code = int(parameters)
-        except Exception:
-            code = 0
+    def _dtype_from_codec_parameters(self, parameters: object) -> np.dtype:
+        code = _to_int(parameters, 0)
         dtype = _SCALAR_CODE_TO_DTYPE.get(code)
         if dtype is None:
             raise ValueError(f"Unsupported codec parameter type code: {code}")
         return dtype
 
-    def _shape_from_dimension(self, dimension: Any) -> tuple[int, ...]:
+    def _shape_from_dimension(self, dimension: object) -> tuple[int, ...]:
+        if not isinstance(dimension, Iterable):
+            return ()
         sizes: list[int] = []
         for d in dimension:
-            if isinstance(d, dict):
-                size = d.get("size")
+            size: object
+            if isinstance(d, Mapping):
+                size = cast(Mapping[str, object], d).get("size")
             else:
                 size = getattr(d, "size", None)
             if size is None:
                 continue
-            sizes.append(int(size))
+            sizes.append(_to_int(size, 0))
         sizes.reverse()
         return tuple(sizes)
 
-    def _raw_get(self, raw: Any, key: str, default: object = None) -> Any:
+    def _raw_get(self, raw: object, key: str, default: object = None) -> object:
         try:
-            return raw[key]
+            return cast(_Indexable, raw)[key]
         except Exception:
-            getter = getattr(raw, "get", None)
+            getter: object = getattr(raw, "get", None)
             if callable(getter):
                 try:
-                    return getter(key, default)
+                    return cast(Callable[[str, object], object], getter)(key, default)
                 except Exception:
                     pass
         return default
 
-    def _has_key(self, raw: Any, key: str) -> bool:
+    def _has_key(self, raw: object, key: str) -> bool:
         try:
-            value = raw[key]
+            value = cast(_Indexable, raw)[key]
         except Exception:
             return False
         return value is not None
@@ -295,11 +314,11 @@ class NTNDAProvider(QObject):
         if codec_name == "blosc":
             try:
                 blosc2 = importlib.import_module("blosc2")
-                return blosc2.decompress(data)
+                return bytes(blosc2.decompress(data))
             except ImportError:
                 try:
                     blosc = importlib.import_module("blosc")
-                    return blosc.decompress(data)
+                    return bytes(blosc.decompress(data))
                 except ImportError as exc:
                     raise RuntimeError(
                         "Codec 'blosc' requires Python package 'blosc2' or 'blosc'"
@@ -308,7 +327,7 @@ class NTNDAProvider(QObject):
         if codec_name == "lz4":
             try:
                 lz4_block = importlib.import_module("lz4.block")
-                return lz4_block.decompress(data, uncompressed_size=uncompressed)
+                return bytes(lz4_block.decompress(data, uncompressed_size=uncompressed))
             except ImportError:
                 pass
 

@@ -106,7 +106,7 @@ def mock_pyqtgraph(mocker: MockerFixture) -> MagicMock:
     pg.ViewBox = mocker.MagicMock()
 
     # Mock RectROI
-    def rect_roi_factory(*args, **kwargs):
+    def rect_roi_factory(*args: object, **kwargs: object) -> MagicMock:
         rect = mocker.MagicMock()
         rect.pos = mocker.MagicMock(
             return_value=mocker.MagicMock(
@@ -130,7 +130,7 @@ def mock_pyqtgraph(mocker: MockerFixture) -> MagicMock:
     pg.RectROI = rect_roi_factory
 
     # Mock TextItem
-    def text_item_factory(*args, **kwargs):
+    def text_item_factory(*args: object, **kwargs: object) -> MagicMock:
         text = mocker.MagicMock()
         text.setPos = mocker.MagicMock()
         text.setVisible = mocker.MagicMock()

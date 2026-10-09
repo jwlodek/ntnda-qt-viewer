@@ -7,7 +7,7 @@ from dataclasses import is_dataclass
 from pytest_mock import MockerFixture
 
 
-def test_roi_model_is_dataclass():
+def test_roi_model_is_dataclass() -> None:
     """Test that _ROIModel is a proper dataclass."""
     from ntnda_qt_viewer._widget import _ROIModel
 
