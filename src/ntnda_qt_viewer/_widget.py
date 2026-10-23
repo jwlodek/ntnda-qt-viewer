@@ -12,7 +12,7 @@ import numpy as np
 import pyqtgraph as pg
 from p4p.client.thread import Context
 from pyqtgraph.GraphicsScene.mouseEvents import MouseDragEvent
-from qtpy.QtCore import QPoint, QPointF, QRect, QSize, Qt, QTimer
+from qtpy.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
 from qtpy.QtGui import QAction, QActionGroup, QCloseEvent, QColor
 from qtpy.QtWidgets import (
     QCheckBox,
@@ -114,6 +114,52 @@ class _ImageViewBox(pg.ViewBox):
                 self.updateScaleBox(ev.buttonDownPos(), ev.pos())
         else:
             super().mouseDragEvent(ev, axis)
+
+
+class _RotatedTickAxisItem(pg.AxisItem):
+    """Top/bottom axis with tick labels rotated 90 degrees to avoid overlap."""
+
+    def __init__(self, orientation: str, **kwargs: object) -> None:
+        if orientation not in ("top", "bottom"):
+            raise ValueError(f"orientation must be 'top' or 'bottom', got {orientation!r}")
+        self._suppress_text_size = False
+        super().__init__(orientation, **kwargs)  # type: ignore[arg-type]
+
+    def _updateMaxTextSize(self, x: int) -> None:  # noqa: N802
+        if not self._suppress_text_size:
+            super()._updateMaxTextSize(x)
+
+    def generateDrawSpecs(self, p):  # type: ignore[no-untyped-def]  # noqa: N802
+        # Base class sizes the axis by label height; rotated labels need width.
+        self._suppress_text_size = True
+        try:
+            axis_spec, tick_specs, text_specs = super().generateDrawSpecs(p)
+        finally:
+            self._suppress_text_size = False
+        rotated = []
+        max_width = 0.0
+        for rect, _flags, text in text_specs:
+            anchor = rect.bottom() if self.orientation == "top" else rect.top()
+            rotated.append((rect.center().x(), anchor, rect.width(), rect.height(), text))
+            max_width = max(max_width, rect.width())
+        self._updateMaxTextSize(int(np.ceil(max_width)))
+        return axis_spec, tick_specs, rotated
+
+    def drawPicture(self, p, axisSpec, tickSpecs, textSpecs):  # type: ignore[no-untyped-def]  # noqa: N802, N803
+        super().drawPicture(p, axisSpec, tickSpecs, [])
+        # After rotating -90 degrees, local +x points up on screen.
+        if self.orientation == "top":
+            align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        else:
+            align = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        flags = int(align | Qt.TextFlag.TextDontClip)
+        for x, anchor, width, height, text in textSpecs:
+            p.save()
+            p.translate(x, anchor)
+            p.rotate(-90)
+            left = 0.0 if self.orientation == "top" else -width
+            p.drawText(QRectF(left, -height / 2, width, height), flags, text)
+            p.restore()
 
 
 class _FlowLayout(QLayout):
@@ -321,12 +367,25 @@ class NTNDAViewerWidget(QWidget):
     auto_scale_n_sigma : float, optional
         N for ``"sigma"``: median +/- N robust standard deviations.
         Default ``3.0``.
+    push_frame : callable or None, optional
+        Registration function called once with :meth:`push_frame`, e.g.
+        ``camera.subscribe``. When given (callback mode) the viewer never
+        talks to CA/PVA: frames come only from the hook and ROIs are kept in
+        memory. Default ``None`` reads frames and ROIs from PVs.
 
     Raises
     ------
     ValueError
         If an option is out of range or options are combined invalidly.
+
+    Notes
+    -----
+    Frames can also be fed in-process, without CA or PVA, by registering
+    :meth:`push_frame` as a callback with any data producer. Pushed frames
+    are only shown while the viewer is started.
     """
+
+    _pushed_frame = Signal(object)
 
     def __init__(
         self,
@@ -353,6 +412,7 @@ class NTNDAViewerWidget(QWidget):
         auto_scale_method: str = _AUTO_SCALE_METHODS[0],
         auto_scale_percentiles: tuple[float, float] = _AUTO_SCALE_PERCENTILES,
         auto_scale_n_sigma: float = _AUTO_SCALE_N_SIGMA,
+        push_frame: Callable[[Callable[[np.ndarray], None]], object] | None = None,
     ) -> None:
         if colormap is not None and colormap not in _COLORMAPS:
             raise ValueError(f"colormap must be one of {_COLORMAPS}, got {colormap!r}")
@@ -417,6 +477,8 @@ class NTNDAViewerWidget(QWidget):
         self._pva_suffix = pva_suffix
         # Raw waveform mode: prefix is the full array PV; ROIs remain <prefix><roi>.
         self._raw_waveform = raw_waveform
+        self._use_pv = push_frame is None
+        self._running = False
         self._roi_suffixes = roi_suffixes
         self._auto_resize_on_first_image = auto_resize_on_first_image
         self._provider = NTNDAProvider(
@@ -482,6 +544,9 @@ class NTNDAViewerWidget(QWidget):
         self._display_timer.setInterval(max(1, int(round(1000.0 / self._max_fps))))
         self._display_timer.timeout.connect(self._refresh_display)
 
+        if push_frame is not None:
+            push_frame(self.push_frame)
+
     # ------------------------------------------------------------------
     # UI setup
     # ------------------------------------------------------------------
@@ -541,13 +606,14 @@ class NTNDAViewerWidget(QWidget):
         self._v_profile_plot = pg.PlotItem()
         self._v_profile_plot.getViewBox().setMouseEnabled(x=False, y=False)
         self._v_profile_plot.setMenuEnabled(False)
-        self._v_profile_plot.hideAxis("bottom")
+        for side in ("left", "bottom"):
+            self._v_profile_plot.hideAxis(side)
         self._v_profile_plot.getViewBox().invertY(bool(self._orientation["invert_y"]))
         self._v_profile_curve: pg.PlotDataItem = self._v_profile_plot.plot(pen="c")
 
-        # Image view sits in the centre of a 3x3 grid (row 1, col 1)
+        # Image plot; placed in the layout by _apply_profile_layout()
         self._image_vb = _ImageViewBox()
-        self._image_plot = self._glw.ci.addPlot(row=1, col=1, viewBox=self._image_vb)
+        self._image_plot = pg.PlotItem(viewBox=self._image_vb)
         self._image_vb.setMouseEnabled(x=True, y=True)
         self._image_plot.setMenuEnabled(False)
         self._image_plot.hideAxis("left")
@@ -562,7 +628,7 @@ class NTNDAViewerWidget(QWidget):
 
         # Mouse hover tracking
         self._proxy = pg.SignalProxy(
-            self._image_plot.scene().sigMouseMoved,
+            self._glw.scene().sigMouseMoved,
             rateLimit=30,
             slot=self._on_mouse_moved,
         )
@@ -580,20 +646,23 @@ class NTNDAViewerWidget(QWidget):
         # Keep crosshairs above ROI overlays, which may be re-created later.
         for line in (self._h_image_line, self._v_image_line):
             line.setZValue(100)
-            line.setVisible(self._show_profile_lines)
+            # Shown once the first image arrives.
+            line.setVisible(False)
             self._image_plot.addItem(line)
 
         # Horizontal profile plot; placed in the layout by _apply_profile_layout()
         self._h_profile_plot = pg.PlotItem()
         self._h_profile_plot.getViewBox().setMouseEnabled(x=False, y=False)
         self._h_profile_plot.setMenuEnabled(False)
-        self._h_profile_plot.hideAxis("left")
+        for side in ("left", "bottom"):
+            self._h_profile_plot.hideAxis(side)
         self._h_profile_plot.getViewBox().invertX(bool(self._orientation["invert_x"]))
         self._h_profile_curve: pg.PlotDataItem = self._h_profile_plot.plot(pen="c")
 
         # Link horizontal profile X axis to image X axis
         self._h_profile_plot.getViewBox().setXLink(self._image_vb)
 
+        self._profile_axes: list[pg.AxisItem] = []
         self._apply_profile_layout()
 
         # --- status bar ---
@@ -610,6 +679,7 @@ class NTNDAViewerWidget(QWidget):
         self._stop_btn.clicked.connect(self.stop)
         self._provider.new_frame.connect(self._on_new_frame)
         self._provider.disconnected.connect(self._on_disconnected)
+        self._pushed_frame.connect(self._on_pushed_frame)
         self._colormap_combo.currentTextChanged.connect(self._on_colormap_changed)
         self._show_profile_lines_check.toggled.connect(self._on_profile_lines_toggled)
 
@@ -626,7 +696,7 @@ class NTNDAViewerWidget(QWidget):
         self._pva_suffix_action = menu.addAction("")
         self._pva_suffix_action.triggered.connect(self._open_pva_suffix_dialog)
         self._refresh_pva_suffix_action_text()
-        self._pva_suffix_action.setVisible(not self._raw_waveform)
+        self._pva_suffix_action.setVisible(self._use_pv and not self._raw_waveform)
 
         self._max_framerate_action = menu.addAction("")
         self._max_framerate_action.triggered.connect(self._open_max_framerate_dialog)
@@ -726,29 +796,55 @@ class NTNDAViewerWidget(QWidget):
 
     def _apply_profile_layout(self) -> None:
         ci = self._glw.ci
-        for plot in (self._v_profile_plot, self._h_profile_plot):
-            if plot in ci.items:
-                ci.removeItem(plot)
+        for item in (self._image_plot, self._v_profile_plot, self._h_profile_plot):
+            if item in ci.items:
+                ci.removeItem(item)
+        for axis in self._profile_axes:
+            ci.removeItem(axis)
+            axis.unlinkFromView()
 
-        v_col = 0 if self._v_profile_position == "left" else 2
-        h_row = 0 if self._h_profile_position == "top" else 2
-        ci.addItem(self._v_profile_plot, row=1, col=v_col)
-        ci.addItem(self._h_profile_plot, row=h_row, col=1)
+        # 4x4 grid. Axes sit in their own cells (not inside the PlotItems) so
+        # profile view boxes stay pixel-aligned with the image and with each
+        # other's axes. Columns/rows are ordered outer-to-inner per side.
+        v_left = self._v_profile_position == "left"
+        h_bottom = self._h_profile_position == "bottom"
+        v_pix_col, v_col, img_col, h_int_col = (0, 1, 2, 3) if v_left else (3, 2, 1, 0)
+        v_int_row, img_row, h_row, h_pix_row = (0, 1, 2, 3) if h_bottom else (3, 2, 1, 0)
 
-        self._v_profile_plot.showAxis("left", v_col == 0)
-        self._v_profile_plot.showAxis("right", v_col == 2)
-        self._h_profile_plot.showAxis("top", h_row == 0)
-        self._h_profile_plot.showAxis("bottom", h_row == 2)
+        ci.addItem(self._image_plot, row=img_row, col=img_col)
+        ci.addItem(self._v_profile_plot, row=img_row, col=v_col)
+        ci.addItem(self._h_profile_plot, row=h_row, col=img_col)
 
-        # Image row/col gets most space; the unused outer row/col collapses.
+        v_vb = self._v_profile_plot.getViewBox()
+        h_vb = self._h_profile_plot.getViewBox()
+        v_pix_axis = pg.AxisItem("left" if v_left else "right")
+        h_pix_axis = pg.AxisItem("bottom" if h_bottom else "top")
+        h_int_axis = pg.AxisItem("right" if v_left else "left", text="Intensity")
+        v_int_axis = _RotatedTickAxisItem(
+            "top" if h_bottom else "bottom", text="Intensity"
+        )
+        placements = (
+            (v_pix_axis, v_vb, img_row, v_pix_col),
+            (h_pix_axis, h_vb, h_pix_row, img_col),
+            (h_int_axis, h_vb, h_row, h_int_col),
+            (v_int_axis, v_vb, v_int_row, v_col),
+        )
+        for axis, vb, row, col in placements:
+            axis.linkToView(vb)
+            ci.addItem(axis, row=row, col=col)
+        self._profile_axes = [v_pix_axis, h_pix_axis, h_int_axis, v_int_axis]
+        self._h_intensity_axis = h_int_axis
+        self._v_intensity_axis = v_int_axis
+
+        # Image row/col gets most space; axis rows/cols size to their contents.
         # GraphicsLayout shadows QGraphicsWidget.layout() with its grid layout.
         layout = cast(QGraphicsGridLayout, ci.layout)
-        for i in range(3):
+        for i in range(4):
             layout.setRowStretchFactor(i, 0)
             layout.setColumnStretchFactor(i, 0)
-        layout.setRowStretchFactor(1, 5)
+        layout.setRowStretchFactor(img_row, 5)
         layout.setRowStretchFactor(h_row, 1)
-        layout.setColumnStretchFactor(1, 5)
+        layout.setColumnStretchFactor(img_col, 5)
         layout.setColumnStretchFactor(v_col, 1)
 
     def _refresh_pva_suffix_action_text(self) -> None:
@@ -873,20 +969,20 @@ class NTNDAViewerWidget(QWidget):
                     dialog, "ROIs", f"ROI suffix '{candidate}' already exists."
                 )
                 return
-            # Validate IOC connection for new ROI
-            ctxt = self._ensure_roi_context()
-            fields = ("MinX", "MinY", "SizeX", "SizeY")
-            try:
-                for field in fields:
-                    channel = self._roi_field_channel(candidate, field)
-                    ctxt.get(channel)
-            except Exception:
-                QMessageBox.warning(
-                    dialog,
-                    "ROIs",
-                    f"Cannot connect to ROI suffix '{candidate}'. Verify the IOC is running and the suffix is correct.",  # noqa: E501
-                )
-                return
+            if self._use_pv:
+                ctxt = self._ensure_roi_context()
+                fields = ("MinX", "MinY", "SizeX", "SizeY")
+                try:
+                    for field in fields:
+                        channel = self._roi_field_channel(candidate, field)
+                        ctxt.get(channel)
+                except Exception:
+                    QMessageBox.warning(
+                        dialog,
+                        "ROIs",
+                        f"Cannot connect to ROI suffix '{candidate}'. Verify the IOC is running and the suffix is correct.",  # noqa: E501
+                    )
+                    return
             self._roi_suffixes.append(candidate)
             self._rebuild_roi_configuration()
             populate_roi_widgets()
@@ -1087,8 +1183,9 @@ class NTNDAViewerWidget(QWidget):
     def _on_profile_lines_toggled(self, visible: bool) -> None:
         self._show_profile_lines = visible
         self._show_profile_lines_action.setChecked(visible)
-        self._h_image_line.setVisible(visible)
-        self._v_image_line.setVisible(visible)
+        show = visible and self._current_image is not None
+        self._h_image_line.setVisible(show)
+        self._v_image_line.setVisible(show)
 
     def _open_scaling_dialog(self) -> None:
         dialog = QDialog(None)
@@ -1325,7 +1422,13 @@ class NTNDAViewerWidget(QWidget):
         if not (0 <= idx < len(self._roi_models)):
             return
         if visible:
-            can_enable, reason = self._load_roi_from_ioc(idx)
+            if self._use_pv:
+                can_enable, reason = self._load_roi_from_ioc(idx)
+            elif self._current_image is None:
+                can_enable = False
+                reason = f"Cannot enable ROI{idx + 1} before first image frame"
+            else:
+                can_enable, reason = True, ""
             if not can_enable:
                 self._set_roi_checkbox(idx, False)
                 self._status_label.setText(reason)
@@ -1491,7 +1594,7 @@ class NTNDAViewerWidget(QWidget):
     def _write_roi(
         self, idx: int, min_x: int, min_y: int, size_x: int, size_y: int
     ) -> None:
-        if not (0 <= idx < len(self._roi_models)):
+        if not self._use_pv or not (0 <= idx < len(self._roi_models)):
             return
         if self._current_image is None:
             return
@@ -1623,18 +1726,25 @@ class NTNDAViewerWidget(QWidget):
         """Subscribe to the image PV and start updating the display.
 
         Uses the prefix currently in the prefix field. Does nothing if the
-        prefix (or, for NTNDArrays, the PVA suffix) is empty. Equivalent to
-        pressing **Start**.
+        prefix (or, for NTNDArrays, the PVA suffix) is empty. In callback
+        mode (``push_frame`` given) only frames from :meth:`push_frame` are
+        accepted. Equivalent to pressing **Start**.
         """
-        prefix = self._prefix_edit.text().strip()
-        pva_suffix = self._pva_suffix.strip()
-        if not prefix or (not self._raw_waveform and not pva_suffix):
-            return
-        self._prefix = prefix
-        self._pva_suffix = pva_suffix
-        channel = self._build_image_channel()
-        self._provider.channel_name = channel
-        self._provider.start()
+        if self._use_pv:
+            prefix = self._prefix_edit.text().strip()
+            pva_suffix = self._pva_suffix.strip()
+            if not prefix or (not self._raw_waveform and not pva_suffix):
+                return
+            self._prefix = prefix
+            self._pva_suffix = pva_suffix
+            channel = self._build_image_channel()
+            self._provider.channel_name = channel
+            self._provider.start()
+            status = f"Subscribed to {channel}"
+        else:
+            self._prefix = self._prefix_edit.text().strip()
+            status = "Waiting for frames"
+        self._running = True
         self._fps_last_time = time.monotonic()
         self._fps_frame_count = 0
         self._fps = 0.0
@@ -1644,14 +1754,16 @@ class NTNDAViewerWidget(QWidget):
         self._pva_suffix_action.setEnabled(False)
         self._roi_management_action.setEnabled(False)
         self._display_timer.start()
-        self._status_label.setText(f"Subscribed to {channel}")
+        self._status_label.setText(status)
 
     def stop(self) -> None:
         """Unsubscribe from the image PV and stop updating the display.
 
         Safe to call when not running. Equivalent to pressing **Stop**.
         """
-        self._provider.stop()
+        self._running = False
+        if self._use_pv:
+            self._provider.stop()
         self._display_timer.stop()
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
@@ -1679,6 +1791,41 @@ class NTNDAViewerWidget(QWidget):
         """Apply the configured data-space orientation transform."""
         transform = str(self._orientation["transform"])
         return self._apply_transform(image, transform)
+
+    def push_frame(self, image: np.ndarray) -> None:
+        """Display ``image`` directly, bypassing CA and PVA.
+
+        Intended to be registered as a hook/callback with an in-process data
+        source. Safe to call from any thread; the frame is copied and shown
+        on the Qt main thread, subject to the max framerate. Frames are
+        dropped while the viewer is stopped.
+
+        Parameters
+        ----------
+        image : numpy.ndarray
+            ``(rows, cols)`` mono or ``(rows, cols, 3)`` RGB image.
+
+        Raises
+        ------
+        ValueError
+            If ``image`` does not have a supported shape.
+        """
+        if not self._running:
+            return
+        frame = np.array(image, copy=True)
+        if not (frame.ndim == 2 or (frame.ndim == 3 and frame.shape[2] == 3)):
+            raise ValueError(
+                "image must have shape (rows, cols) or (rows, cols, 3), "
+                f"got {frame.shape}"
+            )
+        if frame.size == 0:
+            raise ValueError("image must not be empty")
+        self._pushed_frame.emit(frame)
+
+    def _on_pushed_frame(self, image: np.ndarray) -> None:
+        # Re-check: frames queued before stop() may still arrive.
+        if self._running:
+            self._on_new_frame(image)
 
     def _on_new_frame(self, image: np.ndarray) -> None:
         self._pending_image = image
@@ -1760,6 +1907,8 @@ class NTNDAViewerWidget(QWidget):
             self._h_image_line.setValue(0)
             self._v_image_line.setValue(0)
             self._updating_crosshair = False
+            self._h_image_line.setVisible(self._show_profile_lines)
+            self._v_image_line.setVisible(self._show_profile_lines)
 
         self._update_profiles()
         self._update_hover_value()

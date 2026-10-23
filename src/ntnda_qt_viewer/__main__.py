@@ -2,13 +2,20 @@
 
 import sys
 from argparse import ArgumentParser
+from collections.abc import Callable
 
+import numpy as np
+from qtpy.QtCore import QTimer
 from qtpy.QtWidgets import QApplication
 
 from . import __version__
+from ._sim import SIM_PATTERNS, FrameSimulator
 from ._widget import NTNDAViewerWidget
 
 __all__ = ["main"]
+
+_SIM_DEFAULT_SHAPE = (480, 640)
+_SIM_FPS = 20
 
 
 def main() -> None:
@@ -16,7 +23,10 @@ def main() -> None:
     parser.add_argument("-v", "--version", action="version", version=__version__)
     parser.add_argument(
         "prefix",
-        help="Top-level PV prefix, or the full array PV with --raw-waveform",
+        nargs="?",
+        default="",
+        help="Top-level PV prefix, or the full array PV with --raw-waveform "
+        "(optional and display-only with --sim)",
     )
     parser.add_argument(
         "--pva-suffix",
@@ -45,12 +55,13 @@ def main() -> None:
         nargs=2,
         type=int,
         metavar=("ROWS", "COLS"),
-        help="Image size for --raw-waveform",
+        help="Image size for --raw-waveform or --sim (--sim default: 480 640)",
     )
     parser.add_argument(
         "--color",
         action="store_true",
-        help="Flat array is interleaved RGB (--raw-waveform only)",
+        help="Flat array is interleaved RGB (--raw-waveform), or simulate RGB "
+        "frames (--sim)",
     )
     parser.add_argument(
         "--ca",
@@ -90,16 +101,41 @@ def main() -> None:
         help="N for --auto-scale sigma, median +/- N robust sigma "
         "(default: %(default)s)",
     )
+    parser.add_argument(
+        "--sim",
+        choices=SIM_PATTERNS,
+        help="Show a simulated pattern fed in-process instead of reading PVs; "
+        "uses --image-shape and --color for the frame format",
+    )
     args = parser.parse_args()
-    if args.raw_waveform and args.image_shape is None:
+    if args.sim:
+        if args.raw_waveform or args.ca:
+            parser.error("--raw-waveform and --ca cannot be used with --sim")
+    elif not args.prefix:
+        parser.error("prefix is required unless --sim is given")
+    elif args.raw_waveform and args.image_shape is None:
         parser.error("--image-shape is required with --raw-waveform")
-    if not args.raw_waveform and (args.image_shape or args.color or args.ca):
+    elif not args.raw_waveform and (args.image_shape or args.color or args.ca):
         parser.error("--image-shape, --color and --ca require --raw-waveform")
     if args.scale and args.scale[0] >= args.scale[1]:
         parser.error("--scale MIN must be less than MAX")
 
+    image_shape = tuple(args.image_shape) if args.image_shape else None
     app = QApplication.instance() or QApplication(sys.argv)
     try:
+        hook: Callable[[Callable[[np.ndarray], None]], None] | None = None
+        if args.sim:
+            simulator = FrameSimulator(
+                args.sim, image_shape or _SIM_DEFAULT_SHAPE, args.color
+            )
+            sim_timer = QTimer()
+            sim_timer.setInterval(1000 // _SIM_FPS)
+
+            def register_sim(callback: Callable[[np.ndarray], None]) -> None:
+                sim_timer.timeout.connect(lambda: callback(simulator.next_frame()))
+                sim_timer.start()
+
+            hook = register_sim
         widget = NTNDAViewerWidget(
             prefix=args.prefix,
             pva_suffix=args.pva_suffix,
@@ -107,8 +143,8 @@ def main() -> None:
             roi_suffix_pattern=args.roi_suffix_pattern,
             auto_resize_on_first_image=True,
             raw_waveform=args.raw_waveform,
-            image_shape=tuple(args.image_shape) if args.image_shape else None,
-            color=args.color,
+            image_shape=None if args.sim else image_shape,
+            color=args.color and not args.sim,
             scale_min=args.scale[0] if args.scale else None,
             scale_max=args.scale[1] if args.scale else None,
             use_ca=args.ca,
@@ -116,6 +152,7 @@ def main() -> None:
             auto_scale_method=args.auto_scale,
             auto_scale_percentiles=tuple(args.percentiles),
             auto_scale_n_sigma=args.n_sigma,
+            push_frame=hook,
         )
     except ValueError as exc:
         parser.error(str(exc))

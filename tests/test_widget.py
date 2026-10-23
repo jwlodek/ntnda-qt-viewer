@@ -490,10 +490,16 @@ def test_widget_on_profile_lines_toggled(
     # Toggle on
     widget._on_profile_lines_toggled(True)
     assert widget._show_profile_lines is True
+    cast(MagicMock, widget._h_image_line.setVisible).assert_called_with(False)
+
+    widget._pending_image = np.zeros((4, 4), dtype=np.uint16)
+    widget._refresh_display()
+    cast(MagicMock, widget._h_image_line.setVisible).assert_called_with(True)
 
     # Toggle off
     widget._on_profile_lines_toggled(False)
     assert widget._show_profile_lines is False
+    cast(MagicMock, widget._h_image_line.setVisible).assert_called_with(False)
 
 
 def test_widget_set_roi_mode(mocker: MockerFixture, qapp: QCoreApplication) -> None:
@@ -591,6 +597,69 @@ def test_widget_start_stop(mocker: MockerFixture, qapp: QCoreApplication) -> Non
     assert widget._start_btn.isEnabled()
     assert not widget._stop_btn.isEnabled()
     assert not widget._display_timer.isActive()
+
+
+def test_widget_push_frame(mocker: MockerFixture, qapp: QCoreApplication) -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    provider = mocker.MagicMock()
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=provider)
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    hooks: list[object] = []
+    widget = NTNDAViewerWidget("", push_frame=hooks.append)
+    assert hooks == [widget.push_frame]
+    image = np.arange(12, dtype=np.uint16).reshape(3, 4)
+    widget.push_frame(image)
+    assert widget._pending_image is None
+
+    widget.start()
+    widget.push_frame(image)
+    image[0, 0] = 99
+
+    provider.start.assert_not_called()
+    assert widget._display_timer.isActive()
+    assert widget._pending_image is not None
+    assert widget._pending_image[0, 0] == 0
+
+    widget._refresh_display()
+    assert widget._current_image is not None
+    assert widget._current_image.shape == (3, 4)
+
+    widget.push_frame(np.zeros((2, 2, 3), dtype=np.uint8))
+    assert widget._pending_image is not None
+    with pytest.raises(ValueError):
+        widget.push_frame(np.zeros((2, 2, 4)))
+    with pytest.raises(ValueError):
+        widget.push_frame(np.zeros(5))
+
+    widget.stop()
+    provider.stop.assert_not_called()
+    widget._pending_image = None
+    widget.push_frame(image)
+    assert widget._pending_image is None
+
+
+def test_widget_callback_mode_rois_in_memory(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+    context_cls = mocker.patch("ntnda_qt_viewer._widget.Context")
+    mocker.patch.object(NTNDAViewerWidget, "_show_roi_warning")
+
+    widget = NTNDAViewerWidget("", push_frame=lambda _hook: None)
+    widget._toggle_roi_visibility(0, True)
+    assert widget._roi_models[0].visible is False
+
+    widget._current_image = np.zeros((10, 10), dtype=np.uint16)
+    widget._toggle_roi_visibility(0, True)
+    assert widget._roi_models[0].visible is True
+    widget._on_set_roi_rectangle(1, 4, 2, 6)
+    widget._write_roi(0, 1, 2, 3, 4)
+    context_cls.assert_not_called()
 
 
 def test_widget_start_requires_prefix(

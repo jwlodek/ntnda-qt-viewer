@@ -84,6 +84,20 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 ```
 
+## Feeding frames in-process
+
+To display images produced inside your own process, pass a registration
+function as `push_frame`. The viewer calls it once with its frame callback,
+`viewer.push_frame`, which accepts a `(rows, cols)` or `(rows, cols, 3)`
+numpy array, copies it, and is safe to call from any thread. In this mode the
+viewer never talks to CA/PVA and ROIs are kept in memory. Frames are only
+shown while the viewer is started.
+
+```python
+viewer = NTNDAViewerWidget("", push_frame=camera.subscribe)
+viewer.start()
+```
+
 ## Things to know when embedding
 
 - **Start and stop from code.** `start()` subscribes using the prefix in the
@@ -132,6 +146,7 @@ class MainWindow(QMainWindow):
 | `auto_scale_method` | `"percentile"` | `"percentile"`, `"sigma"` or `"minmax"`. |
 | `auto_scale_percentiles` | `(0.1, 99.9)` | Clip percentiles for percentile scaling. |
 | `auto_scale_n_sigma` | `3.0` | N for sigma scaling. |
+| `push_frame` | `None` | Hook registration function; enables callback mode (no PVs). |
 
 Arguments after `parent` are keyword-only. See the
 [API reference](api/ntnda_qt_viewer.md#ntndaviewerwidget) for full descriptions.
