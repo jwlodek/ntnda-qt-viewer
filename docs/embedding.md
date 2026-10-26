@@ -98,6 +98,18 @@ viewer = NTNDAViewerWidget("", push_frame=camera.subscribe)
 viewer.start()
 ```
 
+## Reacting to clicks on the image
+
+`viewer.add_click_hook(hook)` calls `hook(x, y)` with the integer pixel
+column and row each time the image is left-clicked; (0, 0) is the top-left
+pixel. Clicks on ROIs or crosshair lines, outside the image, or before the
+first frame are ignored. Remove a hook
+with `viewer.remove_click_hook(hook)`.
+
+```python
+viewer.add_click_hook(lambda x, y: print(f"clicked pixel ({x}, {y})"))
+```
+
 ## Things to know when embedding
 
 - **Start and stop from code.** `start()` subscribes using the prefix in the

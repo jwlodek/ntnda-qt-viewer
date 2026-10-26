@@ -11,7 +11,7 @@ from typing import cast
 import numpy as np
 import pyqtgraph as pg
 from p4p.client.thread import Context
-from pyqtgraph.GraphicsScene.mouseEvents import MouseDragEvent
+from pyqtgraph.GraphicsScene.mouseEvents import MouseClickEvent, MouseDragEvent
 from qtpy.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
 from qtpy.QtGui import QAction, QActionGroup, QCloseEvent, QColor
 from qtpy.QtWidgets import (
@@ -519,6 +519,7 @@ class NTNDAViewerWidget(QWidget):
         self._hover_x: int = -1
         self._hover_y: int = -1
         self._roi_set_mode_active = self._set_roi_mode
+        self._click_hooks: list[Callable[[int, int], object]] = []
 
         self._init_ui()
         self._connect_signals()
@@ -615,6 +616,7 @@ class NTNDAViewerWidget(QWidget):
             rateLimit=30,
             slot=self._on_mouse_moved,
         )
+        self._glw.scene().sigMouseClicked.connect(self._on_mouse_clicked)
 
         # Link vertical profile Y axis to image Y axis
         self._v_profile_plot.getViewBox().setYLink(self._image_vb)
@@ -1859,6 +1861,53 @@ class NTNDAViewerWidget(QWidget):
         if self._status_label.text() != message:
             logger.warning("%s has no image data yet", channel)
             self._status_label.setText(message)
+
+    def add_click_hook(self, hook: Callable[[int, int], object]) -> None:
+        """Call ``hook(x, y)`` whenever the image is left-clicked.
+
+        ``x`` and ``y`` are the integer pixel column and row of the click,
+        with (0, 0) at the top-left pixel. Clicks outside the image, on ROIs
+        or crosshair lines, or before the first frame are ignored. Hooks run
+        on the Qt main thread.
+        """
+        self._click_hooks.append(hook)
+
+    def remove_click_hook(self, hook: Callable[[int, int], object]) -> None:
+        """Remove a hook added with :meth:`add_click_hook`."""
+        self._click_hooks.remove(hook)
+
+    def _on_mouse_clicked(self, event: MouseClickEvent) -> None:
+        if not self._click_hooks or self._current_image is None:
+            return
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        # When zoomed, clicks on neighbouring plots can still map inside the image.
+        if not self._image_vb.sceneBoundingRect().contains(event.scenePos()):
+            return
+        if self._click_hits_overlay(event.scenePos()):
+            return
+        point: QPointF = self._image_vb.mapSceneToView(event.scenePos())
+        x, y = int(np.floor(point.x())), int(np.floor(point.y()))
+        rows, cols = self._current_image.shape[:2]
+        if not (0 <= x < cols and 0 <= y < rows):
+            return
+        for hook in list(self._click_hooks):
+            try:
+                hook(x, y)
+            except Exception:
+                logger.exception("Click hook %r failed", hook)
+
+    def _click_hits_overlay(self, pos: QPointF) -> bool:
+        """Whether ``pos`` is on a visible ROI (or its handles) or crosshair line."""
+        lines = (self._h_image_line, self._v_image_line)
+        for item in self._glw.scene().items(pos):
+            while item is not None:
+                if item.isVisible() and (
+                    isinstance(item, pg.ROI) or any(item is line for line in lines)
+                ):
+                    return True
+                item = item.parentItem()
+        return False
 
     def _on_mouse_moved(self, args: tuple[QPointF]) -> None:
         pos = args[0]

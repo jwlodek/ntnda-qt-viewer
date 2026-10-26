@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 from pytest_mock import MockerFixture
-from qtpy.QtCore import QCoreApplication
+from qtpy.QtCore import QCoreApplication, Qt
 from qtpy.QtWidgets import QWidget
 
 
@@ -673,6 +673,82 @@ def test_widget_no_image_shows_warning(
     assert widget._status_label.text() == (
         "Warning: DEV:Pva1:Image has no image data yet"
     )
+
+
+def test_widget_click_hook(mocker: MockerFixture, qapp: QCoreApplication) -> None:
+    from qtpy.QtCore import QPointF
+
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    widget = NTNDAViewerWidget("DEV:")
+    hook = mocker.MagicMock()
+    widget.add_click_hook(hook)
+
+    event = mocker.MagicMock()
+    event.button.return_value = Qt.MouseButton.LeftButton
+    vb = mocker.patch.object(widget, "_image_vb")
+    vb.sceneBoundingRect.return_value.contains.return_value = True
+    vb.mapSceneToView.return_value = QPointF(3.7, 1.2)
+    on_overlay = mocker.patch.object(
+        widget, "_click_hits_overlay", return_value=False
+    )
+
+    widget._on_mouse_clicked(event)
+    hook.assert_not_called()
+
+    widget._current_image = np.zeros((4, 10), dtype=np.uint8)
+    widget._on_mouse_clicked(event)
+    hook.assert_called_once_with(3, 1)
+
+    event.button.return_value = Qt.MouseButton.RightButton
+    widget._on_mouse_clicked(event)
+    event.button.return_value = Qt.MouseButton.LeftButton
+    on_overlay.return_value = True
+    widget._on_mouse_clicked(event)
+    on_overlay.return_value = False
+    assert hook.call_count == 1
+
+    vb.mapSceneToView.return_value = QPointF(10.5, 1.0)
+    widget._on_mouse_clicked(event)
+    vb.mapSceneToView.return_value = QPointF(3.0, 1.0)
+    vb.sceneBoundingRect.return_value.contains.return_value = False
+    widget._on_mouse_clicked(event)
+    assert hook.call_count == 1
+
+    widget.remove_click_hook(hook)
+    vb.sceneBoundingRect.return_value.contains.return_value = True
+    widget._on_mouse_clicked(event)
+    assert hook.call_count == 1
+
+
+def test_widget_click_overlay_detection(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
+    from qtpy.QtCore import QPointF
+
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    widget = NTNDAViewerWidget("DEV:")
+    roi = widget._roi_models[0].rect
+    handle = roi.getHandles()[0]
+    items = mocker.patch.object(widget._glw.scene(), "items")
+    pos = QPointF(0, 0)
+
+    items.return_value = [widget._image_item]
+    assert widget._click_hits_overlay(pos) is False
+
+    items.return_value = [handle]
+    assert widget._click_hits_overlay(pos) is False  # ROI hidden
+    roi.setVisible(True)
+    assert widget._click_hits_overlay(pos) is True
+
+    widget._h_image_line.setVisible(False)
+    items.return_value = [widget._h_image_line]
+    assert widget._click_hits_overlay(pos) is False
+    widget._h_image_line.setVisible(True)
+    assert widget._click_hits_overlay(pos) is True
 
 
 def test_widget_start_requires_prefix(
