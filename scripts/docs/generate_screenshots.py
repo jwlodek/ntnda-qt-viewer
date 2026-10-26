@@ -45,8 +45,8 @@ def build_viewer(**kwargs: object) -> NTNDAViewerWidget:
     viewer._pending_image = synthetic_image()
     viewer._refresh_display()
     viewer._indicator.set_connected(True)
-    viewer._h_image_line.setValue(ROWS - 180)
-    viewer._v_image_line.setValue(COLS - 260)
+    viewer._h_image_line.setValue(180)
+    viewer._v_image_line.setValue(260)
     viewer._hover_x, viewer._hover_y = 380, 300
     viewer._update_hover_value()
     viewer._refresh_status_bar()

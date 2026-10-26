@@ -98,6 +98,7 @@ class NTNDAProvider(QObject):
 
     new_frame = Signal(object)
     disconnected = Signal()
+    no_image = Signal()
 
     def __init__(
         self,
@@ -196,7 +197,9 @@ class NTNDAProvider(QObject):
                 return
 
             image = self._extract_image(value)
-            if image.size == 0:
+            # e.g. an NTNDArray PV that has not received a frame yet.
+            if image.size == 0 or image.ndim not in (2, 3) or image.dtype == object:
+                self.no_image.emit()
                 return
 
             self.new_frame.emit(image)
@@ -253,6 +256,8 @@ class NTNDAProvider(QObject):
         shape = self._shape_from_dimension(self._raw_get(raw, "dimension", []))
         if shape:
             count = int(np.prod(shape))
+            if data.size < count:
+                return np.empty(0, dtype=data.dtype)
             data = data[:count].reshape(shape)
         return np.array(data, copy=True)
 
@@ -261,6 +266,8 @@ class NTNDAProvider(QObject):
         uncompressed = _to_int(self._raw_get(raw, "uncompressedSize", 0), 0)
         payload = np.asarray(self._raw_get(raw, "value", []))
         payload_bytes = payload.view(np.uint8).tobytes()[:compressed]
+        if not payload_bytes:
+            return np.empty(0, dtype=np.uint8)
 
         dtype = self._dtype_from_codec_parameters(
             self._raw_get(raw, "codec.parameters", 0)

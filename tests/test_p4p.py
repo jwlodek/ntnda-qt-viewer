@@ -209,6 +209,29 @@ def test_ntnda_provider_raw_array_too_small_returns_empty(
     assert result.size == 0
 
 
+def test_ntnda_provider_empty_ntndarray_emits_no_image(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
+    from ntnda_qt_viewer._p4p import NTNDAProvider
+
+    provider = NTNDAProvider()
+    new_frame = mocker.MagicMock()
+    no_image = mocker.MagicMock()
+    provider.new_frame.connect(new_frame)
+    provider.no_image.connect(no_image)
+
+    dims = [{"size": 4}, {"size": 3}]
+    for value in (
+        {"value": np.array([], dtype=np.uint8), "dimension": dims},
+        {"value": np.array([], dtype=np.uint8), "dimension": []},
+        {"value": None, "dimension": dims},
+    ):
+        provider._monitor_callback(value)
+
+    new_frame.assert_not_called()
+    assert no_image.call_count == 3
+
+
 def test_ntnda_provider_raw_array_requires_shape() -> None:
     from ntnda_qt_viewer._p4p import NTNDAProvider
 

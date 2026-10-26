@@ -59,19 +59,6 @@ _AUTO_SCALE_MAX_SAMPLES = 262_144
 
 _RoiDragCallback = Callable[[float, float, float, float], None]
 
-# One-line orientation control.
-# Change this to another key in _ORIENTATION_PRESETS as needed.
-_ORIENTATION_PRESET = "current"
-
-_ORIENTATION_PRESETS: dict[str, dict[str, str | bool]] = {
-    # Preserves the currently correct orientation.
-    "current": {"transform": "rotate180", "invert_x": True, "invert_y": False},
-    "none": {"transform": "none", "invert_x": False, "invert_y": False},
-    "mirror_lr": {"transform": "none", "invert_x": True, "invert_y": False},
-    "mirror_ud": {"transform": "none", "invert_x": False, "invert_y": True},
-    "rotate180": {"transform": "rotate180", "invert_x": False, "invert_y": False},
-}
-
 
 @dataclass
 class _ROIModel:
@@ -147,8 +134,8 @@ class _RotatedTickAxisItem(pg.AxisItem):
 
     def drawPicture(self, p, axisSpec, tickSpecs, textSpecs):  # type: ignore[no-untyped-def]  # noqa: N802, N803
         super().drawPicture(p, axisSpec, tickSpecs, [])
-        # After rotating -90 degrees, local +x points up on screen.
-        if self.orientation == "top":
+        # After rotating 90 degrees, local +x points down on screen.
+        if self.orientation == "bottom":
             align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         else:
             align = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
@@ -156,8 +143,8 @@ class _RotatedTickAxisItem(pg.AxisItem):
         for x, anchor, width, height, text in textSpecs:
             p.save()
             p.translate(x, anchor)
-            p.rotate(-90)
-            left = 0.0 if self.orientation == "top" else -width
+            p.rotate(90)
+            left = 0.0 if self.orientation == "bottom" else -width
             p.drawText(QRectF(left, -height / 2, width, height), flags, text)
             p.restore()
 
@@ -525,10 +512,6 @@ class NTNDAViewerWidget(QWidget):
         self._fps_last_time = time.monotonic()
         self._fps_frame_count = 0
         self._fps = 0.0
-        self._orientation = _ORIENTATION_PRESETS.get(
-            _ORIENTATION_PRESET,
-            _ORIENTATION_PRESETS["current"],
-        )
 
         self._cross_row = 0
         self._cross_col = 0
@@ -608,7 +591,7 @@ class NTNDAViewerWidget(QWidget):
         self._v_profile_plot.setMenuEnabled(False)
         for side in ("left", "bottom"):
             self._v_profile_plot.hideAxis(side)
-        self._v_profile_plot.getViewBox().invertY(bool(self._orientation["invert_y"]))
+        self._v_profile_plot.getViewBox().invertY(True)
         self._v_profile_curve: pg.PlotDataItem = self._v_profile_plot.plot(pen="c")
 
         # Image plot; placed in the layout by _apply_profile_layout()
@@ -618,8 +601,8 @@ class NTNDAViewerWidget(QWidget):
         self._image_plot.setMenuEnabled(False)
         self._image_plot.hideAxis("left")
         self._image_plot.hideAxis("bottom")
-        self._image_vb.invertX(bool(self._orientation["invert_x"]))
-        self._image_vb.invertY(bool(self._orientation["invert_y"]))
+        # Image convention (as in ImageJ): row 0 at the top, column 0 at the left.
+        self._image_vb.invertY(True)
         self._image_vb.set_roi_drag_mode(False, self._on_set_roi_rectangle)
         self._image_item = pg.ImageItem(autoDownsample=True, axisOrder="row-major")
         self._image_plot.addItem(self._image_item)
@@ -656,7 +639,6 @@ class NTNDAViewerWidget(QWidget):
         self._h_profile_plot.setMenuEnabled(False)
         for side in ("left", "bottom"):
             self._h_profile_plot.hideAxis(side)
-        self._h_profile_plot.getViewBox().invertX(bool(self._orientation["invert_x"]))
         self._h_profile_curve: pg.PlotDataItem = self._h_profile_plot.plot(pen="c")
 
         # Link horizontal profile X axis to image X axis
@@ -679,6 +661,7 @@ class NTNDAViewerWidget(QWidget):
         self._stop_btn.clicked.connect(self.stop)
         self._provider.new_frame.connect(self._on_new_frame)
         self._provider.disconnected.connect(self._on_disconnected)
+        self._provider.no_image.connect(self._on_no_image)
         self._pushed_frame.connect(self._on_pushed_frame)
         self._colormap_combo.currentTextChanged.connect(self._on_colormap_changed)
         self._show_profile_lines_check.toggled.connect(self._on_profile_lines_toggled)
@@ -803,13 +786,13 @@ class NTNDAViewerWidget(QWidget):
             ci.removeItem(axis)
             axis.unlinkFromView()
 
-        # 4x4 grid. Axes sit in their own cells (not inside the PlotItems) so
+        # 4x3 grid. Axes sit in their own cells (not inside the PlotItems) so
         # profile view boxes stay pixel-aligned with the image and with each
         # other's axes. Columns/rows are ordered outer-to-inner per side.
         v_left = self._v_profile_position == "left"
         h_bottom = self._h_profile_position == "bottom"
         v_pix_col, v_col, img_col, h_int_col = (0, 1, 2, 3) if v_left else (3, 2, 1, 0)
-        v_int_row, img_row, h_row, h_pix_row = (0, 1, 2, 3) if h_bottom else (3, 2, 1, 0)
+        img_row, h_row, h_pix_row = (0, 1, 2) if h_bottom else (2, 1, 0)
 
         ci.addItem(self._image_plot, row=img_row, col=img_col)
         ci.addItem(self._v_profile_plot, row=img_row, col=v_col)
@@ -821,13 +804,14 @@ class NTNDAViewerWidget(QWidget):
         h_pix_axis = pg.AxisItem("bottom" if h_bottom else "top")
         h_int_axis = pg.AxisItem("right" if v_left else "left", text="Intensity")
         v_int_axis = _RotatedTickAxisItem(
-            "top" if h_bottom else "bottom", text="Intensity"
+            "bottom" if h_bottom else "top", text="Intensity"
         )
+        # The V intensity axis shares the corner cell beside the H profile.
         placements = (
             (v_pix_axis, v_vb, img_row, v_pix_col),
             (h_pix_axis, h_vb, h_pix_row, img_col),
             (h_int_axis, h_vb, h_row, h_int_col),
-            (v_int_axis, v_vb, v_int_row, v_col),
+            (v_int_axis, v_vb, h_row, v_col),
         )
         for axis, vb, row, col in placements:
             axis.linkToView(vb)
@@ -838,6 +822,11 @@ class NTNDAViewerWidget(QWidget):
 
         # Image row/col gets most space; axis rows/cols size to their contents.
         # GraphicsLayout shadows QGraphicsWidget.layout() with its grid layout.
+        layout = cast(QGraphicsGridLayout, ci.layout)
+        layout.setAlignment(
+            v_int_axis,
+            Qt.AlignmentFlag.AlignTop if h_bottom else Qt.AlignmentFlag.AlignBottom,
+        )
         layout = cast(QGraphicsGridLayout, ci.layout)
         for i in range(4):
             layout.setRowStretchFactor(i, 0)
@@ -1456,28 +1445,6 @@ class NTNDAViewerWidget(QWidget):
     def _show_roi_warning(self, message: str) -> None:
         QMessageBox.warning(self, "ROI Warning", message)
 
-    def _source_to_display_roi(
-        self,
-        min_x: int,
-        min_y: int,
-        size_x: int,
-        size_y: int,
-        rows: int,
-        cols: int,
-    ) -> tuple[int, int, int, int]:
-        """Map ROI from source PV coordinates to displayed image coordinates."""
-        transform = str(self._orientation["transform"])
-        if transform == "rotate180":
-            disp_min_x = cols - (min_x + size_x)
-            disp_min_y = rows - (min_y + size_y)
-            return (
-                int(np.clip(disp_min_x, 0, max(cols - size_x, 0))),
-                int(np.clip(disp_min_y, 0, max(rows - size_y, 0))),
-                size_x,
-                size_y,
-            )
-        return min_x, min_y, size_x, size_y
-
     def _load_roi_from_ioc(self, idx: int) -> tuple[bool, str]:
         if self._current_image is None:
             suffix = self._roi_models[idx].suffix
@@ -1518,11 +1485,8 @@ class NTNDAViewerWidget(QWidget):
                 f"Cannot enable ROI{idx + 1}: ROI bounds are outside image ({cols}x{rows}). Set ROI first.",  # noqa: E501
             )
 
-        x0, y0, size_x, size_y = self._source_to_display_roi(
-            src_min_x, src_min_y, size_x, size_y, rows, cols
-        )
         rect = self._roi_models[idx].rect
-        rect.setPos((x0, y0), update=False, finish=False)
+        rect.setPos((src_min_x, src_min_y), update=False, finish=False)
         rect.setSize((size_x, size_y), update=False, finish=False)
         self._update_roi_label_position(idx)
         return True, ""
@@ -1569,28 +1533,6 @@ class NTNDAViewerWidget(QWidget):
             self._roi_context = Context("pva")
         return self._roi_context
 
-    def _display_to_source_roi(
-        self,
-        min_x: int,
-        min_y: int,
-        size_x: int,
-        size_y: int,
-        rows: int,
-        cols: int,
-    ) -> tuple[int, int, int, int]:
-        """Map ROI from displayed image coordinates back to source PV coordinates."""
-        transform = str(self._orientation["transform"])
-        if transform == "rotate180":
-            src_min_x = cols - (min_x + size_x)
-            src_min_y = rows - (min_y + size_y)
-            return (
-                int(np.clip(src_min_x, 0, max(cols - size_x, 0))),
-                int(np.clip(src_min_y, 0, max(rows - size_y, 0))),
-                size_x,
-                size_y,
-            )
-        return min_x, min_y, size_x, size_y
-
     def _write_roi(
         self, idx: int, min_x: int, min_y: int, size_x: int, size_y: int
     ) -> None:
@@ -1598,17 +1540,13 @@ class NTNDAViewerWidget(QWidget):
             return
         if self._current_image is None:
             return
-        rows, cols = self._current_image.shape[:2]
-        src_min_x, src_min_y, src_size_x, src_size_y = self._display_to_source_roi(
-            min_x, min_y, size_x, size_y, rows, cols
-        )
         suffix = self._roi_models[idx].suffix
         ctxt = self._ensure_roi_context()
         updates = {
-            "MinX": int(src_min_x),
-            "MinY": int(src_min_y),
-            "SizeX": int(src_size_x),
-            "SizeY": int(src_size_y),
+            "MinX": int(min_x),
+            "MinY": int(min_y),
+            "SizeX": int(size_x),
+            "SizeY": int(size_y),
         }
         for field, value in updates.items():
             channel = self._roi_field_channel(suffix, field)
@@ -1781,17 +1719,6 @@ class NTNDAViewerWidget(QWidget):
     # Frame / disconnect handling
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _apply_transform(image: np.ndarray, transform: str) -> np.ndarray:
-        if transform == "rotate180":
-            return image[::-1, ::-1, ...]
-        return image
-
-    def _orient_image(self, image: np.ndarray) -> np.ndarray:
-        """Apply the configured data-space orientation transform."""
-        transform = str(self._orientation["transform"])
-        return self._apply_transform(image, transform)
-
     def push_frame(self, image: np.ndarray) -> None:
         """Display ``image`` directly, bypassing CA and PVA.
 
@@ -1841,7 +1768,7 @@ class NTNDAViewerWidget(QWidget):
         self._pending_image = None
         first_image = self._current_image is None
         self._update_dtype_defaults(image.dtype)
-        self._current_image = self._orient_image(image)
+        self._current_image = image
         image = self._current_image
 
         # Set image data on the ImageItem.
@@ -1925,6 +1852,13 @@ class NTNDAViewerWidget(QWidget):
         self._connected = False
         self._indicator.set_connected(False)
         self._status_label.setText("Disconnected")
+
+    def _on_no_image(self) -> None:
+        channel = self._build_image_channel()
+        message = f"Warning: {channel} has no image data yet"
+        if self._status_label.text() != message:
+            logger.warning("%s has no image data yet", channel)
+            self._status_label.setText(message)
 
     def _on_mouse_moved(self, args: tuple[QPointF]) -> None:
         pos = args[0]

@@ -406,48 +406,31 @@ def test_widget_set_active_roi(mocker: MockerFixture, qapp: QCoreApplication) ->
     assert widget._active_roi_idx == 1
 
 
-def test_widget_source_to_display_roi(
+def test_widget_frame_and_rois_use_source_coordinates(
     mocker: MockerFixture, qapp: QCoreApplication
 ) -> None:
-    """Test source to display ROI coordinate transformation."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
-    mock_provider = mocker.MagicMock()
-    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
     mocker.patch("ntnda_qt_viewer._widget.pg")
+    context_cls = mocker.patch("ntnda_qt_viewer._widget.Context")
 
     widget = NTNDAViewerWidget("DEV:")
+    image = np.arange(12, dtype=np.uint16).reshape(3, 4)
+    widget._pending_image = image
+    widget._refresh_display()
+    assert widget._current_image is not None
+    np.testing.assert_array_equal(widget._current_image, image)
 
-    # Source coordinates: 100x100 image at (10, 20) with size 50x60
-    x0, y0, sx, sy = widget._source_to_display_roi(10, 20, 50, 60, 480, 640)
-
-    # Should return same coordinates when no transform applied
-    assert x0 >= 0
-    assert y0 >= 0
-    assert sx > 0
-    assert sy > 0
-
-
-def test_widget_display_to_source_roi(
-    mocker: MockerFixture, qapp: QCoreApplication
-) -> None:
-    """Test display to source ROI coordinate transformation."""
-    from ntnda_qt_viewer._widget import NTNDAViewerWidget
-
-    mock_provider = mocker.MagicMock()
-    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
-    mocker.patch("ntnda_qt_viewer._widget.pg")
-
-    widget = NTNDAViewerWidget("DEV:")
-
-    # Display coordinates: 100x100 display at (10, 20) with size 50x60
-    x0, y0, sx, sy = widget._display_to_source_roi(10, 20, 50, 60, 480, 640)
-
-    # Should return same coordinates when no transform applied
-    assert x0 >= 0
-    assert y0 >= 0
-    assert sx > 0
-    assert sy > 0
+    widget._write_roi(0, 1, 2, 3, 1)
+    put = context_cls.return_value.put
+    written = {c.args[0]: c.args[1] for c in put.call_args_list}
+    assert written == {
+        "DEV:ROI1:MinX": 1,
+        "DEV:ROI1:MinY": 2,
+        "DEV:ROI1:SizeX": 3,
+        "DEV:ROI1:SizeY": 1,
+    }
 
 
 def test_widget_on_colormap_changed(
@@ -660,6 +643,36 @@ def test_widget_callback_mode_rois_in_memory(
     widget._on_set_roi_rectangle(1, 4, 2, 6)
     widget._write_roi(0, 1, 2, 3, 4)
     context_cls.assert_not_called()
+
+
+def test_widget_hover_reports_source_pixel(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    widget = NTNDAViewerWidget("DEV:")
+    widget._current_image = np.arange(40, dtype=np.uint8).reshape(4, 10)
+    widget._hover_x, widget._hover_y = 2, 1
+    widget._update_hover_value()
+    assert widget._hover_pos == " | x=2 y=1 val=12"
+
+
+def test_widget_no_image_shows_warning(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    widget = NTNDAViewerWidget("DEV:")
+    widget._on_no_image()
+    assert widget._status_label.text() == (
+        "Warning: DEV:Pva1:Image has no image data yet"
+    )
 
 
 def test_widget_start_requires_prefix(
