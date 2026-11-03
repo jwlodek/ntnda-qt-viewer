@@ -146,6 +146,7 @@ viewer.add_click_hook(lambda x, y: print(f"clicked pixel ({x}, {y})"))
 | `show_roi_controls` | `True` | Show the ROI controls bar. |
 | `v_profile_position` | `"left"` | `"left"` or `"right"`. |
 | `h_profile_position` | `"bottom"` | `"top"` or `"bottom"`. |
+| `preserve_aspect_ratio` | `False` | Keep square pixels on resize, with black bars in leftover space. |
 | `use_opengl` | `False` | Use an OpenGL viewport for the plots. |
 | `raw_waveform` | `False` | Treat the PV as a flat array. |
 | `image_shape` | `None` | `(rows, cols)` for raw waveforms. |

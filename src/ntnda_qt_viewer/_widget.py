@@ -322,6 +322,10 @@ class NTNDAViewerWidget(QWidget):
     h_profile_position : {"top", "bottom"}, optional
         Side of the image for the horizontal profile plot. Default
         ``"bottom"``.
+    preserve_aspect_ratio : bool, optional
+        Keep square image pixels on resize, filling leftover space with
+        black bars. The profile plots stay attached to the image edges.
+        Default ``False``.
     use_opengl : bool, optional
         Render the plots with an OpenGL viewport. On some Linux setups this
         stops popup menus from painting. Default ``False``.
@@ -386,6 +390,7 @@ class NTNDAViewerWidget(QWidget):
         show_roi_controls: bool = True,
         v_profile_position: str = "left",
         h_profile_position: str = "bottom",
+        preserve_aspect_ratio: bool = False,
         use_opengl: bool = False,
         raw_waveform: bool = False,
         image_shape: tuple[int, int] | None = None,
@@ -495,6 +500,9 @@ class NTNDAViewerWidget(QWidget):
         self._use_opengl = use_opengl
         self._v_profile_position = v_profile_position
         self._h_profile_position = h_profile_position
+        self._preserve_aspect_ratio = preserve_aspect_ratio
+        self._fitting_aspect_ratio = False
+        self._aspect_pad = (0.0, 0.0)
         self._show_roi_labels = False
         self._jet_lut = self._build_jet_lut()
         self._scale_mode = "auto" if scale_min is None else "manual"
@@ -571,6 +579,7 @@ class NTNDAViewerWidget(QWidget):
 
         # --- graphics layout: aligned image + profile plots ---
         self._glw = pg.GraphicsLayoutWidget()
+        self._glw.setBackground("k")
         # Off by default: a QOpenGLWidget viewport can stop popup menus from painting.
         if self._use_opengl:
             self._glw.useOpenGL(True)
@@ -649,6 +658,14 @@ class NTNDAViewerWidget(QWidget):
         self._profile_axes: list[pg.AxisItem] = []
         self._apply_profile_layout()
 
+        grid = cast(QGraphicsGridLayout, self._glw.ci.layout)
+        # Qt returns the out-parameters as a tuple, but the stub says None.
+        margins: tuple[float, float, float, float] = grid.getContentsMargins()  # type: ignore
+        self._base_layout_margins = margins
+        # No setAspectLocked: its limit clamping shrinks the range on resize.
+        self._image_vb.sigResized.connect(self._fit_aspect_ratio)
+        self._image_vb.sigRangeChanged.connect(self._fit_aspect_ratio)
+
         # --- status bar ---
         self._status_label = QLabel("Idle")
         self._status_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
@@ -710,6 +727,13 @@ class NTNDAViewerWidget(QWidget):
             self._on_show_roi_controls_toggled
         )
 
+        self._preserve_aspect_ratio_action = menu.addAction("Preserve Aspect Ratio")
+        self._preserve_aspect_ratio_action.setCheckable(True)
+        self._preserve_aspect_ratio_action.setChecked(self._preserve_aspect_ratio)
+        self._preserve_aspect_ratio_action.toggled.connect(
+            self._set_preserve_aspect_ratio
+        )
+
         v_pos_menu = menu.addMenu("Vertical Profile Position")
         self._v_profile_position_actions: dict[str, QAction] = {}
         v_pos_group = QActionGroup(self)
@@ -765,12 +789,77 @@ class NTNDAViewerWidget(QWidget):
         self._show_roi_controls = visible
         self._roi_controls_widget.setVisible(visible)
 
+    def _set_preserve_aspect_ratio(self, enabled: bool) -> None:
+        self._preserve_aspect_ratio = enabled
+        self._fit_aspect_ratio()
+        self._reset_image_range()
+
+    def _reset_image_range(self) -> None:
+        if self._current_image is None:
+            return
+        rows, cols = self._current_image.shape[:2]
+        self._image_vb.setRange(xRange=(0, cols), yRange=(0, rows), padding=0)
+
+    def _fit_aspect_ratio(self, *_: object) -> None:
+        """Pad the plot grid so the image cell matches the view range aspect."""
+        if self._fitting_aspect_ratio:
+            return
+        grid = cast(QGraphicsGridLayout, self._glw.ci.layout)
+        left, top, right, bottom = self._base_layout_margins
+        (x_min, x_max), (y_min, y_max) = self._image_vb.viewRange()
+        x_span, y_span = x_max - x_min, y_max - y_min
+        if (
+            not self._preserve_aspect_ratio
+            or self._current_image is None
+            or x_span <= 0
+            or y_span <= 0
+        ):
+            if self._aspect_pad != (0.0, 0.0):
+                self._aspect_pad = (0.0, 0.0)
+                grid.setContentsMargins(left, top, right, bottom)
+            return
+        aspect = x_span / y_span
+        pad_x, pad_y = self._aspect_pad
+        self._fitting_aspect_ratio = True
+        try:
+            # Profile cells share the slack, so padding converges over a few passes.
+            for _attempt in range(10):
+                w, h = self._image_vb.width(), self._image_vb.height()
+                if w <= 0 or h <= 0:
+                    # Padding outgrew a shrunken widget; start over from none.
+                    if pad_x == pad_y == 0.0:
+                        break
+                    pad_x = pad_y = 0.0
+                elif w - h * aspect > 0.5:
+                    if pad_y > 0:
+                        pad_y = max(0.0, pad_y - (w / aspect - h))
+                    else:
+                        pad_x += w - h * aspect
+                elif h - w / aspect > 0.5:
+                    if pad_x > 0:
+                        pad_x = max(0.0, pad_x - (h * aspect - w))
+                    else:
+                        pad_y += h - w / aspect
+                else:
+                    break
+                grid.setContentsMargins(
+                    left + pad_x / 2,
+                    top + pad_y / 2,
+                    right + pad_x / 2,
+                    bottom + pad_y / 2,
+                )
+                grid.activate()
+        finally:
+            self._aspect_pad = (pad_x, pad_y)
+            self._fitting_aspect_ratio = False
+
     def _set_v_profile_position(self, position: str) -> None:
         if position not in _V_PROFILE_POSITIONS:
             raise ValueError(f"Invalid vertical profile position: {position!r}")
         self._v_profile_position = position
         self._v_profile_position_actions[position].setChecked(True)
         self._apply_profile_layout()
+        self._fit_aspect_ratio()
 
     def _set_h_profile_position(self, position: str) -> None:
         if position not in _H_PROFILE_POSITIONS:
@@ -778,6 +867,7 @@ class NTNDAViewerWidget(QWidget):
         self._h_profile_position = position
         self._h_profile_position_actions[position].setChecked(True)
         self._apply_profile_layout()
+        self._fit_aspect_ratio()
 
     def _apply_profile_layout(self) -> None:
         ci = self._glw.ci
@@ -1847,6 +1937,10 @@ class NTNDAViewerWidget(QWidget):
             self._updating_crosshair = False
             self._h_image_line.setVisible(self._show_profile_lines)
             self._v_image_line.setVisible(self._show_profile_lines)
+
+        if shape_changed and self._preserve_aspect_ratio:
+            self._fit_aspect_ratio()
+            self._reset_image_range()
 
         self._update_profiles()
         self._update_hover_value()

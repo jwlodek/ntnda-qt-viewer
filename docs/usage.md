@@ -104,6 +104,7 @@ remain.
 | Show Profile Lines | Shows or hides the crosshair lines. |
 | Show ROI Labels | Shows or hides ROI name labels. |
 | Show ROI Controls | Shows or hides the ROI controls bar. |
+| Preserve Aspect Ratio | Keeps the image's true aspect ratio on resize, filling leftover space with black bars. |
 | Vertical Profile Position | Left or Right of the image. |
 | Horizontal Profile Position | Top or Bottom of the image. |
 | Colormap | Grayscale or JET. Ignored for color images. |

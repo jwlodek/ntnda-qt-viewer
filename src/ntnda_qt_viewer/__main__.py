@@ -26,7 +26,7 @@ def main() -> None:
         nargs="?",
         default="",
         help="Top-level PV prefix, or the full array PV with --raw-waveform "
-        "(optional and display-only with --sim)",
+        "(optional and display-only with --sim; defaults to the pattern name)",
     )
     parser.add_argument(
         "--pva-suffix",
@@ -137,7 +137,7 @@ def main() -> None:
 
             hook = register_sim
         widget = NTNDAViewerWidget(
-            prefix=args.prefix,
+            prefix=args.prefix or args.sim or "",
             pva_suffix=args.pva_suffix,
             num_rois=args.num_rois,
             roi_suffix_pattern=args.roi_suffix_pattern,
@@ -158,6 +158,8 @@ def main() -> None:
         parser.error(str(exc))
     widget.resize(1024, 768)
     widget.show()
+    if args.sim:
+        widget.start()
     sys.exit(app.exec())
 
 
