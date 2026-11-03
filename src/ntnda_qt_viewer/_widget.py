@@ -1769,6 +1769,9 @@ class NTNDAViewerWidget(QWidget):
         self._fps_frame_count += 1
         self._pending_image = None
         first_image = self._current_image is None
+        shape_changed = (
+            first_image or self._current_image.shape[:2] != image.shape[:2]
+        )
         self._update_dtype_defaults(image.dtype)
         self._current_image = image
         image = self._current_image
@@ -1796,13 +1799,8 @@ class NTNDAViewerWidget(QWidget):
 
         rows, cols = image.shape[:2]
 
-        if first_image:
-            # Lock all views to [0, dim] with no padding
-            self._image_vb.setXRange(0, cols, padding=0)
-            self._image_vb.setYRange(0, rows, padding=0)
-            self._h_profile_plot.getViewBox().setXRange(0, cols, padding=0)
-            self._v_profile_plot.getViewBox().setYRange(0, rows, padding=0)
-
+        if shape_changed:
+            # Limits first so stale limits from a previous shape don't clamp the new range.
             self._image_vb.setLimits(
                 xMin=0,
                 xMax=cols,
@@ -1812,6 +1810,19 @@ class NTNDAViewerWidget(QWidget):
             self._h_profile_plot.getViewBox().setLimits(xMin=0, xMax=cols)
             self._v_profile_plot.getViewBox().setLimits(yMin=0, yMax=rows)
 
+            self._image_vb.setXRange(0, cols, padding=0)
+            self._image_vb.setYRange(0, rows, padding=0)
+            self._h_profile_plot.getViewBox().setXRange(0, cols, padding=0)
+            self._v_profile_plot.getViewBox().setYRange(0, rows, padding=0)
+
+            self._updating_crosshair = True
+            self._h_image_line.setBounds((0, rows - 1))
+            self._v_image_line.setBounds((0, cols - 1))
+            self._updating_crosshair = False
+            self._cross_row = min(self._cross_row, rows - 1)
+            self._cross_col = min(self._cross_col, cols - 1)
+
+        if first_image:
             if self._auto_resize_on_first_image:
                 # Profile plots use 1/6 of each axis (stretch 5:1), so scale up
                 # to keep the image area near the target pixel size.
@@ -1831,8 +1842,6 @@ class NTNDAViewerWidget(QWidget):
             self._cross_row = 0
             self._cross_col = 0
             self._updating_crosshair = True
-            self._h_image_line.setBounds((0, rows - 1))
-            self._v_image_line.setBounds((0, cols - 1))
             self._h_image_line.setValue(0)
             self._v_image_line.setValue(0)
             self._updating_crosshair = False

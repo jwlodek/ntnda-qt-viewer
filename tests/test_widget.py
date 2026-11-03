@@ -433,6 +433,36 @@ def test_widget_frame_and_rois_use_source_coordinates(
     }
 
 
+def test_widget_rescales_views_when_image_shape_changes(
+    mocker: MockerFixture, qapp: QCoreApplication
+) -> None:
+    from ntnda_qt_viewer._widget import NTNDAViewerWidget
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch("ntnda_qt_viewer._widget.pg")
+
+    widget = NTNDAViewerWidget("DEV:")
+    image_vb = widget._image_vb
+    widget._pending_image = np.zeros((4, 6), dtype=np.uint16)
+    widget._refresh_display()
+    assert image_vb.viewRange() == [[0, 6], [0, 4]]
+
+    set_x_range = mocker.spy(image_vb, "setXRange")
+    widget._pending_image = np.zeros((4, 6), dtype=np.uint16)
+    widget._refresh_display()
+    set_x_range.assert_not_called()
+
+    widget._cross_row, widget._cross_col = 3, 5
+    widget._pending_image = np.zeros((2, 3), dtype=np.uint16)
+    widget._refresh_display()
+    assert image_vb.state["limits"]["xLimits"] == [0, 3]
+    assert image_vb.state["limits"]["yLimits"] == [0, 2]
+    assert image_vb.viewRange() == [[0, 3], [0, 2]]
+    cast(MagicMock, widget._h_image_line.setBounds).assert_called_with((0, 1))
+    cast(MagicMock, widget._v_image_line.setBounds).assert_called_with((0, 2))
+    assert (widget._cross_row, widget._cross_col) == (1, 2)
+
+
 def test_widget_on_colormap_changed(
     mocker: MockerFixture, qapp: QCoreApplication
 ) -> None:
