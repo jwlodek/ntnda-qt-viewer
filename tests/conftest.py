@@ -22,6 +22,21 @@ def qapp() -> Generator[QCoreApplication, None, None]:
 
 
 @pytest.fixture
+def mock_pg(mocker: MockerFixture) -> MagicMock:
+    """Patch pyqtgraph in the widget module with a minimally realistic mock."""
+    pg = mocker.patch("ntnda_qt_viewer._widget.pg")
+    pg.GraphicsLayoutWidget.return_value.ci.layout.getContentsMargins.return_value = (
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    )
+    # Distinct mocks so the h/v crosshair lines aren't the same object.
+    pg.InfiniteLine.side_effect = lambda *args, **kwargs: MagicMock()
+    return pg
+
+
+@pytest.fixture
 def mock_context(mocker: MockerFixture) -> MagicMock:
     """Create a mock p4p Context."""
     context = mocker.MagicMock()
