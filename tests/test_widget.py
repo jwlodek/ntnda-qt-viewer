@@ -720,9 +720,7 @@ def test_widget_click_hook(mocker: MockerFixture, qapp: QCoreApplication) -> Non
     vb = mocker.patch.object(widget, "_image_vb")
     vb.sceneBoundingRect.return_value.contains.return_value = True
     vb.mapSceneToView.return_value = QPointF(3.7, 1.2)
-    on_overlay = mocker.patch.object(
-        widget, "_click_hits_overlay", return_value=False
-    )
+    on_overlay = mocker.patch.object(widget, "_click_hits_overlay", return_value=False)
 
     widget._on_mouse_clicked(event)
     hook.assert_not_called()

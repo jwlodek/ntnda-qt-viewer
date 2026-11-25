@@ -26,9 +26,7 @@ class FrameSimulator:
         self, pattern: str, shape: tuple[int, int], color: bool = False
     ) -> None:
         if pattern not in SIM_PATTERNS:
-            raise ValueError(
-                f"pattern must be one of {SIM_PATTERNS}, got {pattern!r}"
-            )
+            raise ValueError(f"pattern must be one of {SIM_PATTERNS}, got {pattern!r}")
         rows, cols = shape
         if rows <= 0 or cols <= 0:
             raise ValueError(f"shape must be positive, got {shape!r}")

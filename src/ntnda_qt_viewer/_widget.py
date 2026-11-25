@@ -108,7 +108,9 @@ class _RotatedTickAxisItem(pg.AxisItem):
 
     def __init__(self, orientation: str, **kwargs: object) -> None:
         if orientation not in ("top", "bottom"):
-            raise ValueError(f"orientation must be 'top' or 'bottom', got {orientation!r}")
+            raise ValueError(
+                f"orientation must be 'top' or 'bottom', got {orientation!r}"
+            )
         self._suppress_text_size = False
         super().__init__(orientation, **kwargs)  # type: ignore[arg-type]
 
@@ -127,7 +129,9 @@ class _RotatedTickAxisItem(pg.AxisItem):
         max_width = 0.0
         for rect, _flags, text in text_specs:
             anchor = rect.bottom() if self.orientation == "top" else rect.top()
-            rotated.append((rect.center().x(), anchor, rect.width(), rect.height(), text))
+            rotated.append(
+                (rect.center().x(), anchor, rect.width(), rect.height(), text)
+            )
             max_width = max(max_width, rect.width())
         self._updateMaxTextSize(int(np.ceil(max_width)))
         return axis_spec, tick_specs, rotated
@@ -1859,9 +1863,7 @@ class NTNDAViewerWidget(QWidget):
         self._fps_frame_count += 1
         self._pending_image = None
         first_image = self._current_image is None
-        shape_changed = (
-            first_image or self._current_image.shape[:2] != image.shape[:2]
-        )
+        shape_changed = first_image or self._current_image.shape[:2] != image.shape[:2]
         self._update_dtype_defaults(image.dtype)
         self._current_image = image
         image = self._current_image
@@ -1890,7 +1892,7 @@ class NTNDAViewerWidget(QWidget):
         rows, cols = image.shape[:2]
 
         if shape_changed:
-            # Limits first so stale limits from a previous shape don't clamp the new range.
+            # Limits first so stale ones don't clamp the new range.
             self._image_vb.setLimits(
                 xMin=0,
                 xMax=cols,
