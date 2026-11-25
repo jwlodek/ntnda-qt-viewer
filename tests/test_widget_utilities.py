@@ -2,44 +2,43 @@
 
 from __future__ import annotations
 
+from typing import cast
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 from pytest_mock import MockerFixture
 from qtpy.QtCore import QCoreApplication
 from qtpy.QtWidgets import QWidget
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_image_viewbox_creation(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     """Test creating an _ImageViewBox."""
     from ntnda_qt_viewer._widget import _ImageViewBox
-
-    mocker.patch("ntnda_qt_viewer._widget.pg")
 
     viewbox = _ImageViewBox()
     assert viewbox is not None
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_status_indicator_creation(
     mocker: MockerFixture, qapp: QCoreApplication
 ) -> None:
     """Test creating a _StatusIndicator."""
     from ntnda_qt_viewer._widget import _StatusIndicator
 
-    mocker.patch("ntnda_qt_viewer._widget.pg")
-
     indicator = _StatusIndicator()
     assert indicator is not None
     assert isinstance(indicator, QWidget)
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_status_indicator_set_connected(
     mocker: MockerFixture, qapp: QCoreApplication
 ) -> None:
     """Test status indicator connection state."""
     from ntnda_qt_viewer._widget import _StatusIndicator
-
-    mocker.patch("ntnda_qt_viewer._widget.pg")
 
     indicator = _StatusIndicator()
 
@@ -52,6 +51,7 @@ def test_status_indicator_set_connected(
     # Visual state should update
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_widget_clear_roi_overlays(
     mocker: MockerFixture, qapp: QCoreApplication
 ) -> None:
@@ -60,7 +60,6 @@ def test_widget_clear_roi_overlays(
 
     mock_provider = mocker.MagicMock()
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
-    mocker.patch("ntnda_qt_viewer._widget.pg")
 
     widget = NTNDAViewerWidget("DEV:")
 
@@ -74,10 +73,11 @@ def test_widget_clear_roi_overlays(
     widget._clear_roi_overlays()
 
     # Should remove items and clear list
-    widget._image_plot.removeItem.assert_called()
+    cast(MagicMock, widget._image_plot.removeItem).assert_called()
     assert len(widget._roi_models) == 0
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_widget_clear_roi_controls(
     mocker: MockerFixture, qapp: QCoreApplication
 ) -> None:
@@ -86,7 +86,6 @@ def test_widget_clear_roi_controls(
 
     mock_provider = mocker.MagicMock()
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
-    mocker.patch("ntnda_qt_viewer._widget.pg")
 
     widget = NTNDAViewerWidget("DEV:")
 
@@ -102,6 +101,7 @@ def test_widget_clear_roi_controls(
     assert len(widget._roi_set_buttons) == 0
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_widget_ensure_roi_context(
     mocker: MockerFixture, qapp: QCoreApplication, mock_context: MagicMock
 ) -> None:
@@ -110,7 +110,6 @@ def test_widget_ensure_roi_context(
 
     mock_provider = mocker.MagicMock()
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
-    mocker.patch("ntnda_qt_viewer._widget.pg")
 
     widget = NTNDAViewerWidget("DEV:")
 
@@ -124,13 +123,13 @@ def test_widget_ensure_roi_context(
     assert context2 is context
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_widget_on_new_frame(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     """Test handling new frame."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mock_provider = mocker.MagicMock()
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
-    mocker.patch("ntnda_qt_viewer._widget.pg")
 
     widget = NTNDAViewerWidget("DEV:")
 
@@ -140,13 +139,13 @@ def test_widget_on_new_frame(mocker: MockerFixture, qapp: QCoreApplication) -> N
     assert widget._pending_image is image
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_widget_manual_levels(mocker: MockerFixture, qapp: QCoreApplication) -> None:
     """Test getting manual levels for scaling."""
     from ntnda_qt_viewer._widget import NTNDAViewerWidget
 
     mock_provider = mocker.MagicMock()
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
-    mocker.patch("ntnda_qt_viewer._widget.pg")
 
     widget = NTNDAViewerWidget("DEV:")
 
@@ -163,6 +162,7 @@ def test_widget_manual_levels(mocker: MockerFixture, qapp: QCoreApplication) -> 
     assert levels == (0.0, 100.0)
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_widget_refresh_display_increments_fps(
     mocker: MockerFixture, qapp: QCoreApplication
 ) -> None:
@@ -171,7 +171,6 @@ def test_widget_refresh_display_increments_fps(
 
     mock_provider = mocker.MagicMock()
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
-    mocker.patch("ntnda_qt_viewer._widget.pg")
 
     widget = NTNDAViewerWidget("DEV:")
 
@@ -185,6 +184,7 @@ def test_widget_refresh_display_increments_fps(
     assert widget._fps_frame_count > initial_count
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_widget_normalize_roi_suffix_normalization(
     mocker: MockerFixture, qapp: QCoreApplication
 ) -> None:
@@ -193,7 +193,6 @@ def test_widget_normalize_roi_suffix_normalization(
 
     mock_provider = mocker.MagicMock()
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
-    mocker.patch("ntnda_qt_viewer._widget.pg")
 
     widget = NTNDAViewerWidget("DEV:")
 
@@ -208,6 +207,7 @@ def test_widget_normalize_roi_suffix_normalization(
     assert "ROI2::" in suffixes
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_widget_pva_suffix_action_gating(
     mocker: MockerFixture, qapp: QCoreApplication
 ) -> None:
@@ -216,7 +216,6 @@ def test_widget_pva_suffix_action_gating(
 
     mock_provider = mocker.MagicMock()
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
-    mocker.patch("ntnda_qt_viewer._widget.pg")
 
     widget = NTNDAViewerWidget("DEV:")
 
@@ -232,6 +231,7 @@ def test_widget_pva_suffix_action_gating(
     assert widget._pva_suffix_action.isEnabled()
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_widget_refresh_max_framerate_action_text(
     mocker: MockerFixture, qapp: QCoreApplication
 ) -> None:
@@ -240,7 +240,6 @@ def test_widget_refresh_max_framerate_action_text(
 
     mock_provider = mocker.MagicMock()
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
-    mocker.patch("ntnda_qt_viewer._widget.pg")
 
     widget = NTNDAViewerWidget("DEV:")
 
@@ -252,6 +251,7 @@ def test_widget_refresh_max_framerate_action_text(
     assert "60" in widget._max_framerate_action.text()
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_widget_exit_set_roi_mode(
     mocker: MockerFixture, qapp: QCoreApplication
 ) -> None:
@@ -260,7 +260,6 @@ def test_widget_exit_set_roi_mode(
 
     mock_provider = mocker.MagicMock()
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
-    mocker.patch("ntnda_qt_viewer._widget.pg")
 
     widget = NTNDAViewerWidget("DEV:")
 
@@ -273,6 +272,7 @@ def test_widget_exit_set_roi_mode(
     assert widget._roi_set_mode_active is False
 
 
+@pytest.mark.usefixtures("mock_pg")
 def test_widget_transform_for_scaling(
     mocker: MockerFixture, qapp: QCoreApplication
 ) -> None:
@@ -281,7 +281,6 @@ def test_widget_transform_for_scaling(
 
     mock_provider = mocker.MagicMock()
     mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider", return_value=mock_provider)
-    mocker.patch("ntnda_qt_viewer._widget.pg")
 
     widget = NTNDAViewerWidget("DEV:")
 

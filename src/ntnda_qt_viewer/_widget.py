@@ -6,11 +6,12 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import cast
+from typing import SupportsInt, cast
 
 import numpy as np
 import pyqtgraph as pg
 from p4p.client.thread import Context
+from pyqtgraph.GraphicsScene import GraphicsScene
 from pyqtgraph.GraphicsScene.mouseEvents import MouseClickEvent, MouseDragEvent
 from qtpy.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
 from qtpy.QtGui import QAction, QActionGroup, QCloseEvent, QColor
@@ -108,7 +109,9 @@ class _RotatedTickAxisItem(pg.AxisItem):
 
     def __init__(self, orientation: str, **kwargs: object) -> None:
         if orientation not in ("top", "bottom"):
-            raise ValueError(f"orientation must be 'top' or 'bottom', got {orientation!r}")
+            raise ValueError(
+                f"orientation must be 'top' or 'bottom', got {orientation!r}"
+            )
         self._suppress_text_size = False
         super().__init__(orientation, **kwargs)  # type: ignore[arg-type]
 
@@ -127,7 +130,9 @@ class _RotatedTickAxisItem(pg.AxisItem):
         max_width = 0.0
         for rect, _flags, text in text_specs:
             anchor = rect.bottom() if self.orientation == "top" else rect.top()
-            rotated.append((rect.center().x(), anchor, rect.width(), rect.height(), text))
+            rotated.append(
+                (rect.center().x(), anchor, rect.width(), rect.height(), text)
+            )
             max_width = max(max_width, rect.width())
         self._updateMaxTextSize(int(np.ceil(max_width)))
         return axis_spec, tick_specs, rotated
@@ -620,12 +625,13 @@ class NTNDAViewerWidget(QWidget):
         self._create_roi_overlays()
 
         # Mouse hover tracking
+        scene = cast(GraphicsScene, self._glw.scene())
         self._proxy = pg.SignalProxy(
-            self._glw.scene().sigMouseMoved,
+            scene.sigMouseMoved,
             rateLimit=30,
             slot=self._on_mouse_moved,
         )
-        self._glw.scene().sigMouseClicked.connect(self._on_mouse_clicked)
+        scene.sigMouseClicked.connect(self._on_mouse_clicked)
 
         # Link vertical profile Y axis to image Y axis
         self._v_profile_plot.getViewBox().setYLink(self._image_vb)
@@ -1548,7 +1554,7 @@ class NTNDAViewerWidget(QWidget):
         fields = ("MinX", "MinY", "SizeX", "SizeY")
         try:
             values = [
-                int(ctxt.get(self._roi_field_channel(suffix, field)))
+                int(cast(SupportsInt, ctxt.get(self._roi_field_channel(suffix, field))))
                 for field in fields
             ]
         except Exception:
@@ -1706,7 +1712,9 @@ class NTNDAViewerWidget(QWidget):
         if self._updating_crosshair or self._current_image is None:
             return
         rows = self._current_image.shape[0]
-        self._cross_row = int(np.clip(round(self._h_image_line.value()), 0, rows - 1))
+        # value() is a scalar for horizontal/vertical lines.
+        row = cast(float, self._h_image_line.value())
+        self._cross_row = int(np.clip(round(row), 0, rows - 1))
         self._updating_crosshair = True
         self._h_image_line.setValue(self._cross_row)
         self._updating_crosshair = False
@@ -1716,7 +1724,8 @@ class NTNDAViewerWidget(QWidget):
         if self._updating_crosshair or self._current_image is None:
             return
         cols = self._current_image.shape[1]
-        self._cross_col = int(np.clip(round(self._v_image_line.value()), 0, cols - 1))
+        col = cast(float, self._v_image_line.value())
+        self._cross_col = int(np.clip(round(col), 0, cols - 1))
         self._updating_crosshair = True
         self._v_image_line.setValue(self._cross_col)
         self._updating_crosshair = False
@@ -1858,10 +1867,9 @@ class NTNDAViewerWidget(QWidget):
             return
         self._fps_frame_count += 1
         self._pending_image = None
-        first_image = self._current_image is None
-        shape_changed = (
-            first_image or self._current_image.shape[:2] != image.shape[:2]
-        )
+        previous = self._current_image
+        first_image = previous is None
+        shape_changed = previous is None or previous.shape[:2] != image.shape[:2]
         self._update_dtype_defaults(image.dtype)
         self._current_image = image
         image = self._current_image
@@ -1890,7 +1898,7 @@ class NTNDAViewerWidget(QWidget):
         rows, cols = image.shape[:2]
 
         if shape_changed:
-            # Limits first so stale limits from a previous shape don't clamp the new range.
+            # Limits first so stale ones don't clamp the new range.
             self._image_vb.setLimits(
                 xMin=0,
                 xMax=cols,
