@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -10,6 +10,9 @@ import pytest
 from pytest_mock import MockerFixture
 from qtpy.QtCore import QCoreApplication, Qt
 from qtpy.QtWidgets import QWidget
+
+if TYPE_CHECKING:
+    from ntnda_qt_viewer import NTNDAViewerWidget
 
 
 @pytest.mark.usefixtures("mock_pg")
@@ -792,3 +795,129 @@ def test_widget_start_requires_prefix(
     widget._prefix_edit.setText("  ")
     widget.start()
     provider.start.assert_not_called()
+
+
+def test_viewer_colors_validation() -> None:
+    from ntnda_qt_viewer import ViewerColors
+
+    colors = ViewerColors(roi=["red", "#00ff00"])  # type: ignore[arg-type]
+    assert colors.roi == ("red", "#00ff00")
+    with pytest.raises(ValueError, match="background"):
+        ViewerColors(background="not-a-color")
+    with pytest.raises(ValueError, match=r"roi\[1\]"):
+        ViewerColors(roi=("red", "bogus"))
+
+
+def test_viewer_colors_generates_distinct_roi_colors() -> None:
+    from ntnda_qt_viewer import ViewerColors
+
+    defaults = [ViewerColors().roi_color(i) for i in range(12)]
+    # Pinned so ROI colors stay the same across releases and restarts.
+    assert defaults[:6] == [
+        "#00ff66",
+        "#ffcc00",
+        "#00d9ff",
+        "#ff3366",
+        "#7300ff",
+        "#66ff00",
+    ]
+    assert len(set(defaults)) == len(defaults)
+    # A short custom palette is extended rather than repeated.
+    assert ViewerColors(roi=("#ff0000", "#0000ff")).roi_color(2) == "#00ff00"
+    assert [ViewerColors(roi=()).roi_color(i) for i in range(2)] == [
+        "#ff0000",
+        "#00ffff",
+    ]
+
+
+def _rendered_colors(widget: NTNDAViewerWidget) -> dict[str, object]:
+    """Colors actually set on the (real) pyqtgraph items of a viewer."""
+    import pyqtgraph as pg
+
+    curves = (widget._h_profile_curve, widget._v_profile_curve)
+    lines = (widget._h_image_line, widget._v_image_line)
+    axes = widget._profile_axes
+    return {
+        "background": widget._glw.backgroundBrush().color().name(),
+        "curves": {pg.mkPen(c.opts["pen"]).color().name() for c in curves},
+        "lines": {line.pen.color().name() for line in lines},
+        "axes": {a.pen().color().name() for a in axes}
+        | {a.textPen().color().name() for a in axes},
+        "roi": [m.rect.pen.color().name() for m in widget._roi_models],
+        "roi_labels": [
+            m.label.color.name() for m in widget._roi_models if m.label is not None
+        ],
+    }
+
+
+def test_widget_applies_colors(mocker: MockerFixture, qapp: QCoreApplication) -> None:
+    from ntnda_qt_viewer import NTNDAViewerWidget, ViewerColors
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    colors = ViewerColors(
+        background="#101010",
+        axes="#202020",
+        profile_curves="#303030",
+        profile_lines="#404040",
+        roi=("#ff0000", "#0000ff"),
+    )
+    widget = NTNDAViewerWidget("DEV:", num_rois=3, colors=colors)
+    assert widget.colors is colors
+    assert _rendered_colors(widget) == {
+        "background": "#101010",
+        "curves": {"#303030"},
+        "lines": {"#404040"},
+        "axes": {"#202020"},
+        "roi": ["#ff0000", "#0000ff", "#00ff00"],
+        "roi_labels": ["#ff0000", "#0000ff", "#00ff00"],
+    }
+    hover = widget._roi_models[0].rect.hoverPen.color()
+    assert hover.lightness() > widget._roi_models[0].rect.pen.color().lightness()
+
+    widget.set_colors(ViewerColors(background="white", axes="#000000"))
+    # Axes are re-created when the layout changes and must keep the colors.
+    widget._set_v_profile_position("right")
+    rendered = _rendered_colors(widget)
+    assert rendered["background"] == "#ffffff"
+    assert rendered["axes"] == {"#000000"}
+    assert rendered["curves"] == {"#00ffff"}
+    assert rendered["roi"] == ["#00ff66", "#ffcc00", "#00d9ff"]
+
+
+@pytest.mark.parametrize("accepted", [True, False])
+def test_widget_colors_dialog(
+    mocker: MockerFixture, qapp: QCoreApplication, accepted: bool
+) -> None:
+    from qtpy.QtGui import QColor
+    from qtpy.QtWidgets import QDialog, QPushButton
+
+    from ntnda_qt_viewer import NTNDAViewerWidget, ViewerColors
+
+    mocker.patch("ntnda_qt_viewer._widget.NTNDAProvider")
+    mocker.patch(
+        "ntnda_qt_viewer._widget.QColorDialog.getColor",
+        return_value=QColor("#123456"),
+    )
+
+    def run_dialog(dialog: QDialog) -> QDialog.DialogCode:
+        for name in ("color_background", "color_roi1"):
+            button = dialog.findChild(QPushButton, name)
+            assert button is not None
+            button.click()
+        if accepted:
+            return QDialog.DialogCode.Accepted
+        return QDialog.DialogCode.Rejected
+
+    # A plain function patched onto the class receives the dialog as self.
+    mocker.patch.object(QDialog, "exec", new=run_dialog)
+
+    widget = NTNDAViewerWidget("DEV:", num_rois=2)
+    widget._open_colors_dialog()
+
+    if accepted:
+        assert widget.colors == ViewerColors(
+            background="#123456", roi=("#00ff66", "#123456")
+        )
+    else:
+        assert widget.colors == ViewerColors()
+    assert widget._glw.backgroundBrush().color().name() == widget.colors.background

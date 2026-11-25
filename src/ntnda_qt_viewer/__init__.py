@@ -9,10 +9,10 @@ import logging
 
 from ._p4p import NTNDAProvider
 from ._version import __version__
-from ._widget import NTNDAViewerWidget
+from ._widget import NTNDAViewerWidget, ViewerColors
 
 # The application decides where these records go; without a handler here,
 # Python's lastResort printer writes every warning to stderr.
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
-__all__ = ["__version__", "NTNDAViewerWidget", "NTNDAProvider"]
+__all__ = ["__version__", "NTNDAViewerWidget", "NTNDAProvider", "ViewerColors"]

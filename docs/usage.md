@@ -130,10 +130,11 @@ remain.
 | Show Profile Lines | Shows or hides the crosshair lines. |
 | Show ROI Labels | Shows or hides ROI name labels. |
 | Show ROI Controls | Shows or hides the ROI controls bar. |
-| Preserve Aspect Ratio | Keeps the image's true aspect ratio on resize, filling leftover space with black bars. |
+| Preserve Aspect Ratio | Keeps the image's true aspect ratio on resize, filling leftover space with the background color. |
 | Vertical Profile Position | Left or Right of the image. |
 | Horizontal Profile Position | Top or Bottom of the image. |
 | Colormap | Grayscale or JET. Ignored for color images. |
+| Colors... | Opens the colors dialog (below). |
 
 ### Scaling
 
@@ -149,6 +150,17 @@ remain.
 - **Log scale** applies `log(1 + value)` before scaling, in either mode.
 
 Changes preview live; **Cancel** restores the previous settings.
+
+### Colors
+
+The **Colors...** dialog sets the color of the plot background, the profile
+plot axes and curves, the profile (crosshair) lines and each ROI. Click a
+swatch to pick a color. Hovered ROI outlines use a lighter shade of the ROI's
+color. By default ROI1–ROI4 are green, yellow, cyan and pink, and any further
+ROIs get their own distinct colors, the same on every launch.
+**Restore Defaults** resets every swatch; changes apply on **OK**.
+When embedding, pass the same colors at startup with
+[`colors=ViewerColors(...)`](embedding.md#custom-colors).
 
 ### Layout and colormap
 
