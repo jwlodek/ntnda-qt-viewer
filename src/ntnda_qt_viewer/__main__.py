@@ -85,6 +85,11 @@ def main() -> None:
         help="Start with log intensity scaling enabled",
     )
     parser.add_argument(
+        "--preserve-aspect-ratio",
+        action="store_true",
+        help="Keep square pixels when the window is resized",
+    )
+    parser.add_argument(
         "--auto-scale",
         choices=("percentile", "sigma", "minmax"),
         default="percentile",
@@ -172,6 +177,7 @@ def main() -> None:
             scale_max=args.scale[1] if args.scale else None,
             use_ca=args.ca,
             log_scale=args.log_scale,
+            preserve_aspect_ratio=args.preserve_aspect_ratio,
             auto_scale_method=args.auto_scale,
             auto_scale_percentiles=tuple(args.percentiles),
             auto_scale_n_sigma=args.n_sigma,
