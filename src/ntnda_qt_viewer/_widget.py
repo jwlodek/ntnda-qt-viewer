@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 from typing import SupportsInt, cast
 
 import numpy as np
@@ -14,9 +15,10 @@ from p4p.client.thread import Context
 from pyqtgraph.GraphicsScene import GraphicsScene
 from pyqtgraph.GraphicsScene.mouseEvents import MouseClickEvent, MouseDragEvent
 from qtpy.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
-from qtpy.QtGui import QAction, QActionGroup, QCloseEvent, QColor
+from qtpy.QtGui import QAction, QActionGroup, QCloseEvent, QColor, QPen
 from qtpy.QtWidgets import (
     QCheckBox,
+    QColorDialog,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -41,7 +43,7 @@ from qtpy.QtWidgets import (
 
 from ._p4p import NTNDAProvider
 
-__all__ = ["NTNDAViewerWidget"]
+__all__ = ["NTNDAViewerWidget", "ViewerColors"]
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,94 @@ _AUTO_SCALE_N_SIGMA = 3.0
 _AUTO_SCALE_MAX_SAMPLES = 262_144
 
 _RoiDragCallback = Callable[[float, float, float, float], None]
+
+_DEFAULT_ROI_COLORS = ("#00ff66", "#ffcc00", "#00d9ff", "#ff3366")
+_ROI_PEN_WIDTH = 3
+_ROI_HOVER_PEN_WIDTH = 4
+# Percentage passed to QColor.lighter() for hovered ROI outlines.
+_ROI_HOVER_LIGHTNESS = 140
+_PROFILE_LINE_WIDTH = 2
+
+
+@dataclass(frozen=True)
+class ViewerColors:
+    """Colors of the viewer's plot elements.
+
+    Each color is any name :class:`QColor` accepts, such as ``"#1e1e1e"`` or
+    ``"white"``.
+
+    Parameters
+    ----------
+    background : str, optional
+        Background of the image and profile plot area. Default ``"#000000"``.
+    axes : str, optional
+        Profile plot axis lines, ticks, tick labels and titles. Default
+        ``"#969696"``.
+    profile_curves : str, optional
+        Horizontal and vertical profile curves. Default ``"#00ffff"``.
+    profile_lines : str, optional
+        Crosshair (profile) lines drawn on the image. Default ``"#ffff00"``.
+    roi : sequence of str, optional
+        Colors of the first ROIs' outlines and labels, in order. ROIs beyond
+        these get generated colors with hues as far as possible from those
+        already in use; generation is deterministic, so a given ROI always
+        gets the same color. An empty sequence generates every ROI's color.
+        Hovered outlines use a lighter shade. Default green, yellow, cyan
+        and pink.
+
+    Raises
+    ------
+    ValueError
+        If a color name is invalid.
+    """
+
+    background: str = "#000000"
+    axes: str = "#969696"
+    profile_curves: str = "#00ffff"
+    profile_lines: str = "#ffff00"
+    roi: tuple[str, ...] = _DEFAULT_ROI_COLORS
+
+    def __post_init__(self) -> None:
+        # Accept any sequence (e.g. a list) but store a hashable tuple.
+        object.__setattr__(self, "roi", tuple(self.roi))
+        named = [
+            (f.name, getattr(self, f.name)) for f in fields(self) if f.name != "roi"
+        ]
+        named += [(f"roi[{i}]", c) for i, c in enumerate(self.roi)]
+        for name, value in named:
+            if not isinstance(value, str) or not QColor.isValidColorName(value):
+                raise ValueError(f"Invalid color for {name}: {value!r}")
+
+    def roi_color(self, idx: int) -> str:
+        """Return the color for the ROI at zero-based index ``idx``."""
+        if idx < len(self.roi):
+            return self.roi[idx]
+        return _generated_roi_colors(self.roi, idx - len(self.roi) + 1)[-1]
+
+
+@functools.cache
+def _generated_roi_colors(palette: tuple[str, ...], count: int) -> tuple[str, ...]:
+    """Return ``count`` saturated colors with hues distinct from ``palette``.
+
+    Each new hue bisects the widest gap between the hues used so far (ties go
+    to the lowest hue), so the sequence depends only on ``palette``.
+    """
+    hues = sorted({h for c in palette if (h := QColor(c).hsvHueF()) >= 0})
+    colors: list[str] = []
+    for _ in range(count):
+        if hues:
+            # Gap from each hue to the next, wrapping; a lone hue spans the circle.
+            gaps = [
+                ((hues[(i + 1) % len(hues)] - hue) % 1.0 or 1.0, hue)
+                for i, hue in enumerate(hues)
+            ]
+            width, start = max(gaps, key=lambda gap: gap[0])
+            hue = (start + width / 2) % 1.0
+        else:
+            hue = 0.0
+        hues = sorted([*hues, hue])
+        colors.append(QColor.fromHsvF(hue, 1.0, 1.0).name())
+    return tuple(colors)
 
 
 @dataclass
@@ -328,9 +418,13 @@ class NTNDAViewerWidget(QWidget):
         Side of the image for the horizontal profile plot. Default
         ``"bottom"``.
     preserve_aspect_ratio : bool, optional
-        Keep square image pixels on resize, filling leftover space with
-        black bars. The profile plots stay attached to the image edges.
+        Keep square image pixels on resize, filling leftover space with the
+        background color. The profile plots stay attached to the image edges.
         Default ``False``.
+    colors : ViewerColors or None, optional
+        Colors of the background, profile plots, profile lines and ROIs.
+        ``None`` uses the :class:`ViewerColors` defaults. Can be changed later
+        with :meth:`set_colors` or from the Settings menu.
     use_opengl : bool, optional
         Render the plots with an OpenGL viewport. On some Linux setups this
         stops popup menus from painting. Default ``False``.
@@ -396,6 +490,7 @@ class NTNDAViewerWidget(QWidget):
         v_profile_position: str = "left",
         h_profile_position: str = "bottom",
         preserve_aspect_ratio: bool = False,
+        colors: ViewerColors | None = None,
         use_opengl: bool = False,
         raw_waveform: bool = False,
         image_shape: tuple[int, int] | None = None,
@@ -506,6 +601,7 @@ class NTNDAViewerWidget(QWidget):
         self._v_profile_position = v_profile_position
         self._h_profile_position = h_profile_position
         self._preserve_aspect_ratio = preserve_aspect_ratio
+        self._colors = colors if colors is not None else ViewerColors()
         self._fitting_aspect_ratio = False
         self._aspect_pad = (0.0, 0.0)
         self._show_roi_labels = False
@@ -593,7 +689,7 @@ class NTNDAViewerWidget(QWidget):
 
         # --- graphics layout: aligned image + profile plots ---
         self._glw = pg.GraphicsLayoutWidget()
-        self._glw.setBackground("k")
+        self._glw.setBackground(self._colors.background)
         # Off by default: a QOpenGLWidget viewport can stop popup menus from painting.
         if self._use_opengl:
             self._glw.useOpenGL(True)
@@ -616,7 +712,9 @@ class NTNDAViewerWidget(QWidget):
         for side in ("left", "bottom"):
             self._v_profile_plot.hideAxis(side)
         self._v_profile_plot.getViewBox().invertY(True)
-        self._v_profile_curve: pg.PlotDataItem = self._v_profile_plot.plot(pen="c")
+        self._v_profile_curve: pg.PlotDataItem = self._v_profile_plot.plot(
+            pen=self._colors.profile_curves
+        )
 
         # Image plot; placed in the layout by _apply_profile_layout()
         self._image_vb = _ImageViewBox()
@@ -647,10 +745,10 @@ class NTNDAViewerWidget(QWidget):
 
         # Crosshair lines on the image
         self._h_image_line = pg.InfiniteLine(
-            pos=0, angle=0, movable=True, pen=pg.mkPen("y", width=2)
+            pos=0, angle=0, movable=True, pen=self._profile_line_pen()
         )
         self._v_image_line = pg.InfiniteLine(
-            pos=0, angle=90, movable=True, pen=pg.mkPen("y", width=2)
+            pos=0, angle=90, movable=True, pen=self._profile_line_pen()
         )
         # Keep crosshairs above ROI overlays, which may be re-created later.
         for line in (self._h_image_line, self._v_image_line):
@@ -665,7 +763,9 @@ class NTNDAViewerWidget(QWidget):
         self._h_profile_plot.setMenuEnabled(False)
         for side in ("left", "bottom"):
             self._h_profile_plot.hideAxis(side)
-        self._h_profile_curve: pg.PlotDataItem = self._h_profile_plot.plot(pen="c")
+        self._h_profile_curve: pg.PlotDataItem = self._h_profile_plot.plot(
+            pen=self._colors.profile_curves
+        )
 
         # Link horizontal profile X axis to image X axis
         self._h_profile_plot.getViewBox().setXLink(self._image_vb)
@@ -798,6 +898,9 @@ class NTNDAViewerWidget(QWidget):
             action.triggered.connect(on_colormap)
             self._colormap_actions[name] = action
 
+        colors_action = menu.addAction("Colors...")
+        colors_action.triggered.connect(self._open_colors_dialog)
+
         self._settings_btn.setMenu(menu)
 
     def _on_show_roi_controls_toggled(self, visible: bool) -> None:
@@ -925,6 +1028,7 @@ class NTNDAViewerWidget(QWidget):
         )
         for axis, vb, row, col in placements:
             axis.linkToView(vb)
+            self._style_axis(axis)
             ci.addItem(axis, row=row, col=col)
         self._profile_axes = [v_pix_axis, h_pix_axis, h_int_axis, v_int_axis]
         self._h_intensity_axis = h_int_axis
@@ -1291,6 +1395,135 @@ class NTNDAViewerWidget(QWidget):
         self._h_image_line.setVisible(show)
         self._v_image_line.setVisible(show)
 
+    # ------------------------------------------------------------------
+    # Plot colors
+    # ------------------------------------------------------------------
+
+    @property
+    def colors(self) -> ViewerColors:
+        """The current plot colors."""
+        return self._colors
+
+    def set_colors(self, colors: ViewerColors) -> None:
+        """Recolor the background, profile plots, profile lines and ROIs.
+
+        Parameters
+        ----------
+        colors : ViewerColors
+            The new colors. Equivalent to accepting the **Colors...** dialog.
+        """
+        self._colors = colors
+        self._glw.setBackground(colors.background)
+        for curve in (self._h_profile_curve, self._v_profile_curve):
+            curve.setPen(colors.profile_curves)
+        for line in (self._h_image_line, self._v_image_line):
+            line.setPen(self._profile_line_pen())
+        for axis in self._profile_axes:
+            self._style_axis(axis)
+        for idx, model in enumerate(self._roi_models):
+            self._style_roi(idx, model)
+        logger.debug("Plot colors set to %s", colors)
+
+    def _profile_line_pen(self) -> QPen:
+        return pg.mkPen(self._colors.profile_lines, width=_PROFILE_LINE_WIDTH)
+
+    def _style_axis(self, axis: pg.AxisItem) -> None:
+        axis.setPen(self._colors.axes)
+        axis.setTextPen(self._colors.axes)
+
+    def _style_roi(self, idx: int, model: _ROIModel) -> None:
+        color = self._colors.roi_color(idx)
+        model.rect.setPen(pg.mkPen(color, width=_ROI_PEN_WIDTH))
+        model.rect.hoverPen = pg.mkPen(
+            QColor(color).lighter(_ROI_HOVER_LIGHTNESS), width=_ROI_HOVER_PEN_WIDTH
+        )
+        if model.label is not None:
+            model.label.setColor(color)
+
+    def _open_colors_dialog(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Colors")
+        layout = QVBoxLayout(dialog)
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        # One row per ROI; with no ROIs, keep the palette unchanged.
+        num_roi_rows = len(self._roi_models)
+        pending: dict[str, str] = {}
+        swatches: dict[str, QPushButton] = {}
+
+        def load(colors: ViewerColors) -> None:
+            pending.update(
+                background=colors.background,
+                axes=colors.axes,
+                profile_curves=colors.profile_curves,
+                profile_lines=colors.profile_lines,
+            )
+            for i in range(num_roi_rows):
+                pending[f"roi{i}"] = colors.roi_color(i)
+            for key, button in swatches.items():
+                paint(key, button)
+
+        def paint(key: str, button: QPushButton) -> None:
+            color = QColor(pending[key])
+            text = "#000000" if color.lightnessF() > 0.5 else "#ffffff"
+            button.setText(color.name())
+            button.setStyleSheet(f"background-color: {color.name()}; color: {text};")
+
+        def pick(key: str, title: str) -> None:
+            color = QColorDialog.getColor(QColor(pending[key]), dialog, title)
+            if color.isValid():
+                pending[key] = color.name()
+                paint(key, swatches[key])
+
+        rows = [
+            ("background", "Background"),
+            ("axes", "Profile Axes"),
+            ("profile_curves", "Profile Curves"),
+            ("profile_lines", "Profile Lines"),
+        ] + [(f"roi{i}", f"ROI{i + 1}") for i in range(num_roi_rows)]
+        for key, title in rows:
+            button = QPushButton()
+            button.setObjectName(f"color_{key}")
+
+            def on_click(_checked: bool = False, k: str = key, t: str = title) -> None:
+                pick(k, t)
+
+            button.clicked.connect(on_click)
+            swatches[key] = button
+            form.addRow(title, button)
+        load(self._colors)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel
+            | QDialogButtonBox.StandardButton.RestoreDefaults
+        )
+        buttons.button(QDialogButtonBox.StandardButton.RestoreDefaults).clicked.connect(
+            lambda: load(ViewerColors())
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        roi = (
+            tuple(pending[f"roi{i}"] for i in range(num_roi_rows))
+            if num_roi_rows
+            else self._colors.roi
+        )
+        self.set_colors(
+            replace(
+                self._colors,
+                background=pending["background"],
+                axes=pending["axes"],
+                profile_curves=pending["profile_curves"],
+                profile_lines=pending["profile_lines"],
+                roi=roi,
+            )
+        )
+
     def _open_scaling_dialog(self) -> None:
         dialog = QDialog(None)
         dialog.setWindowTitle("Scaling Options")
@@ -1633,22 +1866,8 @@ class NTNDAViewerWidget(QWidget):
         return True, ""
 
     def _create_roi_overlays(self) -> None:
-        pens = [
-            pg.mkPen("#00ff66", width=3),
-            pg.mkPen("#ffcc00", width=3),
-            pg.mkPen("#00d9ff", width=3),
-            pg.mkPen("#ff3366", width=3),
-        ]
-        hover_pens = [
-            pg.mkPen("#adff2f", width=4),
-            pg.mkPen("#ffd84d", width=4),
-            pg.mkPen("#66eaff", width=4),
-            pg.mkPen("#ff7fa2", width=4),
-        ]
-        colors = ["#00ff66", "#ffcc00", "#00d9ff", "#ff3366"]
         for idx, suffix in enumerate(self._roi_suffixes):
-            rect = pg.RectROI([0, 0], [20, 20], pen=pens[idx % len(pens)], movable=True)
-            rect.hoverPen = hover_pens[idx % len(hover_pens)]
+            rect = pg.RectROI([0, 0], [20, 20], movable=True)
             rect.addScaleHandle([0.5, 0.0], [0.5, 1.0])
             rect.addScaleHandle([0.5, 1.0], [0.5, 0.0])
             rect.addScaleHandle([0.0, 0.5], [1.0, 0.5])
@@ -1661,13 +1880,13 @@ class NTNDAViewerWidget(QWidget):
             rect.setVisible(False)
             self._image_plot.addItem(rect)
 
-            label = pg.TextItem(f"ROI{idx + 1}", color=colors[idx % len(colors)])
+            label = pg.TextItem(f"ROI{idx + 1}")
             label.setVisible(False)
             self._image_plot.addItem(label)
 
-            self._roi_models.append(
-                _ROIModel(suffix=suffix, rect=rect, label=label, visible=False)
-            )
+            model = _ROIModel(suffix=suffix, rect=rect, label=label, visible=False)
+            self._style_roi(idx, model)
+            self._roi_models.append(model)
 
     def _ensure_roi_context(self) -> Context:
         if self._roi_context is None:

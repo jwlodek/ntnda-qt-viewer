@@ -110,6 +110,32 @@ with `viewer.remove_click_hook(hook)`.
 viewer.add_click_hook(lambda x, y: print(f"clicked pixel ({x}, {y})"))
 ```
 
+## Custom colors
+
+Pass a `ViewerColors` to restyle the plots, for example to match a light
+application theme. Unset fields keep their defaults. The `roi` colors apply
+to the first ROIs in order; any further ROIs get generated colors with hues
+distinct from those already in use, and each ROI always gets the same color:
+
+```python
+from ntnda_qt_viewer import NTNDAViewerWidget, ViewerColors
+
+viewer = NTNDAViewerWidget(
+    "DEV:XSPD1:",
+    colors=ViewerColors(
+        background="white",
+        axes="#333333",
+        profile_curves="#1f77b4",
+        profile_lines="#d62728",
+        roi=["#2ca02c", "#9467bd"],
+    ),
+)
+```
+
+Change them later with `viewer.set_colors(...)`; `viewer.colors` returns the
+current ones, so `dataclasses.replace(viewer.colors, background="#202020")`
+changes a single color. Users can also edit them from **Settings → Colors...**.
+
 ## Things to know when embedding
 
 - **Start and stop from code.** `start()` subscribes using the prefix in the
@@ -146,7 +172,8 @@ viewer.add_click_hook(lambda x, y: print(f"clicked pixel ({x}, {y})"))
 | `show_roi_controls` | `True` | Show the ROI controls bar. |
 | `v_profile_position` | `"left"` | `"left"` or `"right"`. |
 | `h_profile_position` | `"bottom"` | `"top"` or `"bottom"`. |
-| `preserve_aspect_ratio` | `False` | Keep square pixels on resize, with black bars in leftover space. |
+| `preserve_aspect_ratio` | `False` | Keep square pixels on resize, filling leftover space with the background color. |
+| `colors` | `None` | `ViewerColors` for the background, profile plots, profile lines and ROIs; `None` uses the defaults. |
 | `use_opengl` | `False` | Use an OpenGL viewport for the plots. |
 | `raw_waveform` | `False` | Treat the PV as a flat array. |
 | `image_shape` | `None` | `(rows, cols)` for raw waveforms. |
