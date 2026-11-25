@@ -1,5 +1,6 @@
 """Interface for ``python -m napari_ntnd``."""
 
+import logging
 import sys
 from argparse import ArgumentParser
 from collections.abc import Callable
@@ -16,6 +17,9 @@ __all__ = ["main"]
 
 _SIM_DEFAULT_SHAPE = (480, 640)
 _SIM_FPS = 20
+_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -81,6 +85,11 @@ def main() -> None:
         help="Start with log intensity scaling enabled",
     )
     parser.add_argument(
+        "--preserve-aspect-ratio",
+        action="store_true",
+        help="Keep square pixels when the window is resized",
+    )
+    parser.add_argument(
         "--auto-scale",
         choices=("percentile", "sigma", "minmax"),
         default="percentile",
@@ -107,6 +116,13 @@ def main() -> None:
         help="Show a simulated pattern fed in-process instead of reading PVs; "
         "uses --image-shape and --color for the frame format",
     )
+    parser.add_argument(
+        "--log-level",
+        type=str.upper,
+        choices=_LOG_LEVELS,
+        default="WARNING",
+        help="Logging verbosity (default: %(default)s)",
+    )
     args = parser.parse_args()
     if args.sim:
         if args.raw_waveform or args.ca:
@@ -120,11 +136,23 @@ def main() -> None:
     if args.scale and args.scale[0] >= args.scale[1]:
         parser.error("--scale MIN must be less than MAX")
 
+    # The package logger only has a NullHandler, so the app must add one.
+    logging.basicConfig(
+        level=args.log_level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    logger.debug("Parsed arguments: %s", vars(args))
+
     image_shape = tuple(args.image_shape) if args.image_shape else None
     app = QApplication.instance() or QApplication(sys.argv)
     try:
         hook: Callable[[Callable[[np.ndarray], None]], None] | None = None
         if args.sim:
+            logger.info(
+                "Simulating %s pattern at %d FPS",
+                args.sim,
+                _SIM_FPS,
+            )
             simulator = FrameSimulator(
                 args.sim, image_shape or _SIM_DEFAULT_SHAPE, args.color
             )
@@ -149,6 +177,7 @@ def main() -> None:
             scale_max=args.scale[1] if args.scale else None,
             use_ca=args.ca,
             log_scale=args.log_scale,
+            preserve_aspect_ratio=args.preserve_aspect_ratio,
             auto_scale_method=args.auto_scale,
             auto_scale_percentiles=tuple(args.percentiles),
             auto_scale_n_sigma=args.n_sigma,

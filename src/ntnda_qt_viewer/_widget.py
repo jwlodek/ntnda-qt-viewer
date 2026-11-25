@@ -543,6 +543,15 @@ class NTNDAViewerWidget(QWidget):
 
         if push_frame is not None:
             push_frame(self.push_frame)
+        logger.debug(
+            "Created viewer (prefix=%r, pva_suffix=%r, rois=%s, raw_waveform=%s, "
+            "use_pv=%s)",
+            self._prefix,
+            self._pva_suffix,
+            self._roi_suffixes,
+            self._raw_waveform,
+            self._use_pv,
+        )
 
     # ------------------------------------------------------------------
     # UI setup
@@ -796,6 +805,7 @@ class NTNDAViewerWidget(QWidget):
         self._roi_controls_widget.setVisible(visible)
 
     def _set_preserve_aspect_ratio(self, enabled: bool) -> None:
+        logger.debug("Preserve aspect ratio set to %s", enabled)
         self._preserve_aspect_ratio = enabled
         self._fit_aspect_ratio()
         self._reset_image_range()
@@ -863,6 +873,7 @@ class NTNDAViewerWidget(QWidget):
         if position not in _V_PROFILE_POSITIONS:
             raise ValueError(f"Invalid vertical profile position: {position!r}")
         self._v_profile_position = position
+        logger.debug("Vertical profile position set to %s", position)
         self._v_profile_position_actions[position].setChecked(True)
         self._apply_profile_layout()
         self._fit_aspect_ratio()
@@ -871,6 +882,7 @@ class NTNDAViewerWidget(QWidget):
         if position not in _H_PROFILE_POSITIONS:
             raise ValueError(f"Invalid horizontal profile position: {position!r}")
         self._h_profile_position = position
+        logger.debug("Horizontal profile position set to %s", position)
         self._h_profile_position_actions[position].setChecked(True)
         self._apply_profile_layout()
         self._fit_aspect_ratio()
@@ -951,6 +963,7 @@ class NTNDAViewerWidget(QWidget):
             QMessageBox.warning(self, "PVA Suffix", "PVA suffix cannot be empty.")
             return
         self._pva_suffix = suffix
+        logger.info("PVA suffix set to %r", suffix)
         self._refresh_pva_suffix_action_text()
 
     def _set_pva_suffix_action_enabled(self, enabled: bool) -> None:
@@ -1168,6 +1181,7 @@ class NTNDAViewerWidget(QWidget):
         self._roi_models.clear()
 
     def _rebuild_roi_configuration(self) -> None:
+        logger.info("ROI configuration changed to %s", self._roi_suffixes)
         self._exit_set_roi_mode()
         self._active_roi_idx = 0
         self._clear_roi_controls()
@@ -1191,6 +1205,7 @@ class NTNDAViewerWidget(QWidget):
         self._max_fps = max(1, int(fps))
         interval_ms = max(1, int(round(1000.0 / self._max_fps)))
         self._display_timer.setInterval(interval_ms)
+        logger.debug("Max display framerate set to %d FPS", self._max_fps)
         self._refresh_max_framerate_action_text()
         self._refresh_status_bar()
 
@@ -1228,6 +1243,7 @@ class NTNDAViewerWidget(QWidget):
         if self._data_dtype == dtype:
             return
         self._data_dtype = dtype
+        logger.debug("Image dtype is now %s", dtype)
         if self._manual_range_from_init:
             return
         self._manual_min, self._manual_max = self._dtype_min_max(dtype)
@@ -1260,6 +1276,7 @@ class NTNDAViewerWidget(QWidget):
         self._image_item.setLookupTable(None)  # type: ignore
 
     def _on_colormap_changed(self, name: str) -> None:
+        logger.debug("Colormap set to %s", name)
         self._selected_colormap = name
         self._current_colormap = name
         action = self._colormap_actions.get(name)
@@ -1389,6 +1406,17 @@ class NTNDAViewerWidget(QWidget):
 
         def _on_accept() -> None:
             if _apply_from_controls(show_error=True):
+                logger.info(
+                    "Scaling set to %s (log=%s, method=%s, percentiles=%s, "
+                    "n_sigma=%s, manual=%s..%s)",
+                    self._scale_mode,
+                    self._log_scale,
+                    self._auto_method,
+                    self._auto_percentiles,
+                    self._auto_n_sigma,
+                    self._manual_min,
+                    self._manual_max,
+                )
                 dialog.accept()
 
         auto_radio.toggled.connect(_on_preview_change)
@@ -1480,6 +1508,11 @@ class NTNDAViewerWidget(QWidget):
         self._active_roi_idx = idx
 
     def _set_roi_mode_enabled(self, enabled: bool) -> None:
+        logger.debug(
+            "Set-ROI mode %s for ROI%d",
+            "entered" if enabled else "exited",
+            self._active_roi_idx + 1,
+        )
         self._set_roi_mode = enabled
         self._roi_set_mode_active = enabled
         self._image_vb.set_roi_drag_mode(enabled, self._on_set_roi_rectangle)
@@ -1517,12 +1550,14 @@ class NTNDAViewerWidget(QWidget):
             else:
                 can_enable, reason = True, ""
             if not can_enable:
+                logger.warning("%s", reason)
                 self._set_roi_checkbox(idx, False)
                 self._status_label.setText(reason)
                 self._show_roi_warning(reason)
                 return
         model = self._roi_models[idx]
         model.visible = visible
+        logger.info("ROI%d %s", idx + 1, "enabled" if visible else "disabled")
         model.rect.setVisible(visible)
         if model.label is not None:
             model.label.setVisible(visible and self._show_roi_labels)
@@ -1562,6 +1597,14 @@ class NTNDAViewerWidget(QWidget):
             return False, f"Failed to read ROI{idx + 1} settings from IOC"
 
         src_min_x, src_min_y, size_x, size_y = values
+        logger.debug(
+            "Read %s from IOC: min=(%d, %d) size=(%d, %d)",
+            suffix,
+            src_min_x,
+            src_min_y,
+            size_x,
+            size_y,
+        )
         if size_x <= 0 or size_y <= 0:
             return (
                 False,
@@ -1628,6 +1671,7 @@ class NTNDAViewerWidget(QWidget):
 
     def _ensure_roi_context(self) -> Context:
         if self._roi_context is None:
+            logger.debug("Creating PVA context for ROI PVs")
             self._roi_context = Context("pva")
         return self._roi_context
 
@@ -1646,6 +1690,7 @@ class NTNDAViewerWidget(QWidget):
             "SizeX": int(size_x),
             "SizeY": int(size_y),
         }
+        logger.debug("Writing %s to IOC: %s", suffix, updates)
         for field, value in updates.items():
             channel = self._roi_field_channel(suffix, field)
             try:
@@ -1773,6 +1818,7 @@ class NTNDAViewerWidget(QWidget):
             prefix = self._prefix_edit.text().strip()
             pva_suffix = self._pva_suffix.strip()
             if not prefix or (not self._raw_waveform and not pva_suffix):
+                logger.debug("Not starting: prefix or PVA suffix is empty")
                 return
             self._prefix = prefix
             self._pva_suffix = pva_suffix
@@ -1783,6 +1829,7 @@ class NTNDAViewerWidget(QWidget):
         else:
             self._prefix = self._prefix_edit.text().strip()
             status = "Waiting for frames"
+        logger.info("Viewer started: %s", status)
         self._running = True
         self._fps_last_time = time.monotonic()
         self._fps_frame_count = 0
@@ -1800,6 +1847,8 @@ class NTNDAViewerWidget(QWidget):
 
         Safe to call when not running. Equivalent to pressing **Stop**.
         """
+        if self._running:
+            logger.info("Viewer stopped")
         self._running = False
         if self._use_pv:
             self._provider.stop()
@@ -1898,6 +1947,17 @@ class NTNDAViewerWidget(QWidget):
         rows, cols = image.shape[:2]
 
         if shape_changed:
+            if previous is None:
+                logger.info("First image: %dx%d %s", cols, rows, image.dtype)
+            else:
+                prev_rows, prev_cols = previous.shape[:2]
+                logger.info(
+                    "Image size changed from %dx%d to %dx%d",
+                    prev_cols,
+                    prev_rows,
+                    cols,
+                    rows,
+                )
             # Limits first so stale ones don't clamp the new range.
             self._image_vb.setLimits(
                 xMin=0,
@@ -1962,6 +2022,7 @@ class NTNDAViewerWidget(QWidget):
         self._refresh_status_bar()
 
     def _on_disconnected(self) -> None:
+        logger.debug("Marking viewer disconnected")
         self._connected = False
         self._indicator.set_connected(False)
         self._status_label.setText("Disconnected")
@@ -1982,10 +2043,12 @@ class NTNDAViewerWidget(QWidget):
         on the Qt main thread.
         """
         self._click_hooks.append(hook)
+        logger.debug("Added click hook %r", hook)
 
     def remove_click_hook(self, hook: Callable[[int, int], object]) -> None:
         """Remove a hook added with :meth:`add_click_hook`."""
         self._click_hooks.remove(hook)
+        logger.debug("Removed click hook %r", hook)
 
     def _on_mouse_clicked(self, event: MouseClickEvent) -> None:
         if not self._click_hooks or self._current_image is None:
@@ -2056,6 +2119,7 @@ class NTNDAViewerWidget(QWidget):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """Stop the image monitor and close the ROI PV context."""
+        logger.debug("Closing viewer")
         self._display_timer.stop()
         self._provider.stop()
         if self._roi_context is not None:

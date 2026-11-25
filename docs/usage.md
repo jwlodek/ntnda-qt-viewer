@@ -7,8 +7,9 @@ ntnda-qt-viewer DEV:XSPD1:                       # image PV DEV:XSPD1:Pva1:Image
 ntnda-qt-viewer DEV:XSPD1: --pva-suffix Pva2:    # image PV DEV:XSPD1:Pva2:Image
 ```
 
-The prefix is required. The image PV is `<prefix><pva-suffix>Image`, and ROI
-PVs are `<prefix><roi-suffix>{MinX,MinY,SizeX,SizeY}`.
+The prefix is required unless `--sim` is given. The image PV is
+`<prefix><pva-suffix>Image`, and ROI PVs are
+`<prefix><roi-suffix>{MinX,MinY,SizeX,SizeY}`.
 
 ### Command-line options
 
@@ -24,9 +25,12 @@ PVs are `<prefix><roi-suffix>{MinX,MinY,SizeX,SizeY}`.
 | `--ca` | Connect to the raw waveform over Channel Access instead of PVAccess. |
 | `--scale MIN MAX` | Start in manual scaling over this range. |
 | `--log-scale` | Start with log intensity scaling. |
+| `--preserve-aspect-ratio` | Keep square pixels when the window is resized (default off). |
 | `--auto-scale {percentile,sigma,minmax}` | Auto scaling method (default `percentile`). |
 | `--percentiles LOW HIGH` | Clip percentiles for percentile auto scaling (default `0.1 99.9`). |
 | `--n-sigma N` | N for sigma auto scaling: median ± N robust sigma (default 3.0). |
+| `--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}` | Logging verbosity, case-insensitive (default `WARNING`). |
+| `--sim {gradient,noise,spot,checkerboard,rings}` | Show a simulated pattern instead of reading PVs. |
 
 ### Plain waveform PVs
 
@@ -35,10 +39,32 @@ name and the image size:
 
 ```bash
 ntnda-qt-viewer DEV:CAM:ArrayData --raw-waveform --image-shape 480 640
-ntnda-qt-viewer DEV:CAM:ArrayData --raw-waveform --image-shape 480 640 --color --ca
+ntnda-qt-viewer DEV:CAM:ArrayData --raw-waveform --image-shape 480 640 --color
 ```
 
 ROI PVs are still built as `<prefix><roi-suffix>...`.
+
+### Channel Access
+
+Add `--ca` to read a plain waveform over Channel Access instead of PVAccess,
+for example the `ArrayData` PV of an areaDetector NDStdArrays plugin. `--ca`
+only works with `--raw-waveform`; NTNDArrays are PVAccess only.
+
+```bash
+ntnda-qt-viewer DEV:XSPD1:image1:ArrayData --ca --raw-waveform --image-shape 1024 1024
+```
+
+### Simulated images
+
+`--sim` feeds a generated pattern at 20 FPS without any IOC, which is handy
+for trying out the viewer or its settings. It starts automatically. The prefix
+is optional and only shown in the window. `--image-shape` and `--color` set
+the frame format (default 480x640 mono).
+
+```bash
+ntnda-qt-viewer --sim gradient
+ntnda-qt-viewer --sim rings --image-shape 1024 1024 --color
+```
 
 ## The window
 
