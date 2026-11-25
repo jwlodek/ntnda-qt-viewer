@@ -27,6 +27,7 @@ PVs are `<prefix><roi-suffix>{MinX,MinY,SizeX,SizeY}`.
 | `--auto-scale {percentile,sigma,minmax}` | Auto scaling method (default `percentile`). |
 | `--percentiles LOW HIGH` | Clip percentiles for percentile auto scaling (default `0.1 99.9`). |
 | `--n-sigma N` | N for sigma auto scaling: median ± N robust sigma (default 3.0). |
+| `--log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}` | Logging verbosity, case-insensitive (default `WARNING`). |
 
 ### Plain waveform PVs
 

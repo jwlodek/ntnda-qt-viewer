@@ -49,6 +49,7 @@ def _get_ca_loop() -> asyncio.AbstractEventLoop:
         if _ca_loop is None:
             loop = asyncio.new_event_loop()
             threading.Thread(target=loop.run_forever, name="aioca", daemon=True).start()
+            logger.debug("Started Channel Access event loop thread")
             _ca_loop = loop
         return _ca_loop
 
@@ -122,6 +123,17 @@ class NTNDAProvider(QObject):
         self._color = color
         self._ctxt: Context | None = None
         self._subscription: _Subscription | None = None
+        # Reset on disconnect so the first frame of each connection is logged.
+        self._receiving = False
+        logger.debug(
+            "Created provider for %s (raw_waveform=%s, image_shape=%s, color=%s, "
+            "use_ca=%s)",
+            channel_name,
+            raw_waveform,
+            image_shape,
+            color,
+            use_ca,
+        )
 
     @property
     def channel_name(self) -> str:
@@ -130,6 +142,7 @@ class NTNDAProvider(QObject):
     @channel_name.setter
     def channel_name(self, name: str) -> None:
         was_running = self._subscription is not None
+        logger.debug("Changing channel from %s to %s", self._channel_name, name)
         if was_running:
             self.stop()
         self._channel_name = name
@@ -139,7 +152,9 @@ class NTNDAProvider(QObject):
     def start(self) -> None:
         """Start monitoring the NTNDArray PV."""
         if self._subscription is not None:
+            logger.debug("Already subscribed to %s", self._channel_name)
             return
+        self._receiving = False
         if self._use_ca:
             self._start_ca()
             return
@@ -190,6 +205,7 @@ class NTNDAProvider(QObject):
         try:
             if isinstance(value, (Disconnected, CANothing)):
                 logger.warning("Channel %s disconnected", self._channel_name)
+                self._receiving = False
                 self.disconnected.emit()
                 return
             if isinstance(value, Exception):
@@ -199,9 +215,18 @@ class NTNDAProvider(QObject):
             image = self._extract_image(value)
             # e.g. an NTNDArray PV that has not received a frame yet.
             if image.size == 0 or image.ndim not in (2, 3) or image.dtype == object:
+                logger.debug("Update from %s contained no image", self._channel_name)
                 self.no_image.emit()
                 return
 
+            if not self._receiving:
+                self._receiving = True
+                logger.info(
+                    "Receiving frames from %s (shape=%s, dtype=%s)",
+                    self._channel_name,
+                    image.shape,
+                    image.dtype,
+                )
             self.new_frame.emit(image)
         except Exception:
             logger.exception(
@@ -249,6 +274,8 @@ class NTNDAProvider(QObject):
         if not codec_name:
             return self._extract_uncompressed_ntndarray(raw)
 
+        if not self._receiving:
+            logger.debug("%s uses codec %r", self._channel_name, codec_name)
         return self._decompress_ntndarray(raw, codec_name)
 
     def _extract_uncompressed_ntndarray(self, raw: object) -> np.ndarray:
@@ -257,6 +284,12 @@ class NTNDAProvider(QObject):
         if shape:
             count = int(np.prod(shape))
             if data.size < count:
+                logger.debug(
+                    "%s has %d elements, fewer than the %d its dimensions imply",
+                    self._channel_name,
+                    data.size,
+                    count,
+                )
                 return np.empty(0, dtype=data.dtype)
             data = data[:count].reshape(shape)
         return np.array(data, copy=True)
