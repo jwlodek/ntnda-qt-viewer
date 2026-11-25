@@ -47,7 +47,7 @@ name = "Jakub Wlodek"
 
 [dependency-groups]
 dev = [
-    "ty",
+    "pyright",
     "copier",
     "pipdeptree",
     "pre-commit",
